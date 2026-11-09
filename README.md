@@ -33,4 +33,4 @@ Run it entirely on-device with local models, or bring your own cloud API keys. Y
 
 ## License
 
-To be added in Phase 1.
+[MIT](LICENSE)

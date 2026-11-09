@@ -1,0 +1,337 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ══════════════════════════════════════════════════════════
+   JULI — Premium Design System
+   ══════════════════════════════════════════════════════════ */
+
+/* ─── Base Layer ─────────────────────────────────────── */
+@layer base {
+  :root {
+    --color-juli-bg: #0a0e1a;
+    --color-juli-bg-rgb: 10, 14, 26;
+    --color-juli-panel: #0d1321;
+    --color-juli-panel-rgb: 13, 19, 33;
+    --color-juli-accent: #06b6d4;
+    --color-juli-accent-rgb: 6, 182, 212;
+    --color-juli-border: #1a2744;
+    --color-juli-border-rgb: 26, 39, 68;
+    --color-juli-muted: #94a3b8;
+    --color-juli-muted-rgb: 148, 163, 184;
+  }
+
+  *,
+  *::before,
+  *::after {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(6, 182, 212, 0.15) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(6, 182, 212, 0.2);
+    border-radius: 10px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(6, 182, 212, 0.35);
+  }
+
+  body {
+    overflow: hidden;
+    background: var(--color-juli-bg);
+    color: #e2e8f0;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  ::selection {
+    background: rgba(6, 182, 212, 0.3);
+    color: #fff;
+  }
+}
+
+/* ─── Glassmorphism Utilities ────────────────────────── */
+@layer components {
+  .glass {
+    background: color-mix(in srgb, var(--color-juli-panel) 60%, transparent);
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+    border: 1px solid color-mix(in srgb, var(--color-juli-accent) 8%, transparent);
+  }
+
+  .glass-light {
+    background: color-mix(in srgb, var(--color-juli-panel) 35%, transparent);
+    backdrop-filter: blur(12px) saturate(1.3);
+    -webkit-backdrop-filter: blur(12px) saturate(1.3);
+    border: 1px solid color-mix(in srgb, var(--color-juli-accent) 6%, transparent);
+  }
+
+  .glass-card {
+    background: color-mix(in srgb, var(--color-juli-panel) 50%, transparent);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid color-mix(in srgb, var(--color-juli-accent) 10%, transparent);
+    box-shadow:
+      0 4px 24px rgba(0, 0, 0, 0.25),
+      inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .glass-card:hover {
+    border-color: color-mix(in srgb, var(--color-juli-accent) 20%, transparent);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  .glass-input {
+    background: color-mix(in srgb, var(--color-juli-bg) 60%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid color-mix(in srgb, var(--color-juli-accent) 12%, transparent);
+    transition: all 0.3s ease;
+  }
+
+  .glass-input:focus {
+    border-color: color-mix(in srgb, var(--color-juli-accent) 40%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-juli-accent) 8%, transparent);
+    outline: none;
+  }
+}
+
+/* ─── Glow Effects ───────────────────────────────────── */
+.glow-cyan {
+  box-shadow:
+    0 0 10px color-mix(in srgb, var(--color-juli-accent) 15%, transparent),
+    0 0 30px color-mix(in srgb, var(--color-juli-accent) 5%, transparent);
+}
+
+.glow-line {
+  position: relative;
+}
+
+.glow-line::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-juli-accent) 30%, transparent), transparent);
+}
+
+.glow-text {
+  text-shadow: 0 0 20px color-mix(in srgb, var(--color-juli-accent) 40%, transparent), 0 0 40px color-mix(in srgb, var(--color-juli-accent) 10%, transparent);
+}
+
+/* ─── Animations ─────────────────────────────────────── */
+@keyframes slideUp {
+  0% {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 4px currentColor, 0 0 12px currentColor;
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 8px currentColor, 0 0 24px currentColor;
+    opacity: 0.7;
+  }
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease both;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2.5s ease-in-out infinite;
+}
+
+.animate-orb-float {
+  animation: orbFloat 3s ease-in-out infinite;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 40%, color-mix(in srgb, var(--color-juli-accent) 6%, transparent) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 8s linear infinite;
+}
+
+/* ─── Grid Background ───────────────────────────────── */
+.grid-bg {
+  background-color: var(--color-juli-bg);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--color-juli-accent) 4%, transparent) 0%, transparent 60%),
+    linear-gradient(color-mix(in srgb, var(--color-juli-accent) 2%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--color-juli-accent) 2%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 50px 50px, 50px 50px;
+}
+
+/* ─── Code Block ─────────────────────────────────────── */
+.code-block {
+  background: color-mix(in srgb, var(--color-juli-bg) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-juli-accent) 10%, transparent);
+  border-radius: 8px;
+  padding: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.btn-glow {
+  background: linear-gradient(135deg, var(--color-juli-accent), color-mix(in srgb, var(--color-juli-accent) 60%, #2563eb));
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-glow::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+  background-size: 200% 200%;
+  animation: shimmer 3s ease infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.btn-glow:hover::before {
+  opacity: 1;
+}
+
+.btn-glow:hover {
+  box-shadow:
+    0 4px 20px color-mix(in srgb, var(--color-juli-accent) 25%, transparent),
+    0 0 40px color-mix(in srgb, var(--color-juli-accent) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.btn-glow:active {
+  transform: translateY(0);
+}
+
+/* ─── Status Dot ─────────────────────────────────────── */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  position: relative;
+}
+
+.status-dot.active::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  opacity: 0.4;
+  animation: pulseGlow 2s ease-in-out infinite;
+}
+
+/* ─── Transitions ────────────────────────────────────── */
+.sidebar-transition {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.collapse-fade-enter-active,
+.collapse-fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.collapse-fade-enter-from,
+.collapse-fade-leave-to {
+  opacity: 0;
+}
+
+/* ─── UX Pro Max: Accessibility ──────────────────────── */
+
+/* Cursor pointer on all interactive elements */
+button, a, [role="button"], input[type="submit"], select, summary {
+  cursor: pointer;
+}
+
+input:not([type="submit"]), textarea {
+  cursor: text;
+}
+
+/* Visible focus states for keyboard navigation */
+:focus-visible {
+  outline: 2px solid rgba(var(--color-juli-accent-rgb), 0.5);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button:focus-visible, a:focus-visible {
+  box-shadow: 0 0 0 3px rgba(var(--color-juli-accent-rgb), 0.15);
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .animate-slide-up,
+  .animate-fade-in,
+  .animate-pulse-glow,
+  .animate-orb-float,
+  .animate-shimmer,
+  .animate-spin-slow {
+    animation: none !important;
+  }
+}
+
+/* ─── Forced Theme Overrides (Bypassing Tailwind Cache) ─── */
+.text-juli-accent { color: rgba(var(--color-juli-accent-rgb), var(--tw-text-opacity, 1)) !important; }
+.hover\:text-juli-accent:hover { color: rgba(var(--color-juli-accent-rgb), var(--tw-text-opacity, 1)) !important; }
+.bg-juli-accent { background-color: rgba(var(--color-juli-accent-rgb), var(--tw-bg-opacity, 1)) !important; }
+.border-juli-accent { border-color: rgba(var(--color-juli-accent-rgb), var(--tw-border-opacity, 1)) !important; }

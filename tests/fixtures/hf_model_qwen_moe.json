@@ -1,0 +1,20 @@
+{
+ "id": "unsloth/Qwen3-30B-A3B-GGUF",
+ "author": "unsloth",
+ "private": false,
+ "gated": false,
+ "pipeline_tag": "text-generation",
+ "lastModified": "2025-06-08T08:10:02.000Z",
+ "cardData": {
+  "base_model": "Qwen/Qwen3-30B-A3B",
+  "license_link": "https://huggingface.co/Qwen/Qwen3-30B-A3B/blob/main/LICENSE",
+  "license": "apache-2.0"
+ },
+ "gguf": {
+  "total": 30532122624,
+  "architecture": "qwen3moe",
+  "context_length": 40960,
+  "eos_token": "<|im_end|>",
+  "totalFileSize": 17310782016
+ }
+}

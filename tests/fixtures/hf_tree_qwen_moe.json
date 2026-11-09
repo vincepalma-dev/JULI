@@ -1,0 +1,60 @@
+[
+ {
+  "type": "directory",
+  "size": 0,
+  "path": "BF16"
+ },
+ {
+  "type": "file",
+  "size": 49693950144,
+  "path": "BF16/Qwen3-30B-A3B-BF16-00001-of-00002.gguf",
+  "lfs": {
+   "size": 49693950144
+  }
+ },
+ {
+  "type": "file",
+  "size": 11401853280,
+  "path": "BF16/Qwen3-30B-A3B-BF16-00002-of-00002.gguf",
+  "lfs": {
+   "size": 11401853280
+  }
+ },
+ {
+  "type": "file",
+  "size": 16378073664,
+  "path": "Qwen3-30B-A3B-IQ4_XS.gguf",
+  "lfs": {
+   "size": 16378073664
+  }
+ },
+ {
+  "type": "file",
+  "size": 18556686912,
+  "path": "Qwen3-30B-A3B-Q4_K_M.gguf",
+  "lfs": {
+   "size": 18556686912
+  }
+ },
+ {
+  "type": "file",
+  "size": 32483932736,
+  "path": "Qwen3-30B-A3B-Q8_0.gguf",
+  "lfs": {
+   "size": 32483932736
+  }
+ },
+ {
+  "type": "file",
+  "size": 17715663424,
+  "path": "Qwen3-30B-A3B-UD-Q4_K_XL.gguf",
+  "lfs": {
+   "size": 17715663424
+  }
+ },
+ {
+  "type": "file",
+  "size": 20099,
+  "path": "README.md"
+ }
+]

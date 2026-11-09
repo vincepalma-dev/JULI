@@ -7,7 +7,8 @@ from fastapi import APIRouter, HTTPException, Response
 
 from juli import config, keystore
 from juli import providers as llm
-from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ProviderId, RunSettings
+from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ModeRequest, ProviderId, RunSettings
+from juli.local import crew
 
 router = APIRouter(prefix="/settings")
 
@@ -32,6 +33,7 @@ def get_settings() -> dict:
         "key_hints": {p: keystore.key_hint(keystore.get_key(p)) for p in settings["providers"]},
         "available_models": list(dict.fromkeys(llm.preset_refs() + settings["available_models"] + in_use)),
         "run": settings["run"],
+        "mode": crew.current_mode(settings),
     }
 
 
@@ -42,9 +44,12 @@ def update_agents(agents: AgentUpdates) -> dict:
         for name, update in agents.items():
             # Unset fields stay as they are; an explicit null only clears max_tokens.
             changes = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None or k == "max_tokens"}
+            agent = settings["agents"].setdefault(name, {})
             if changes.get("model"):
                 _require_known_provider(changes["model"], settings)
-            settings["agents"].setdefault(name, {}).update(changes)
+                if changes["model"] != agent.get("model"):
+                    agent.pop("num_ctx", None)  # fitted to the old model; Auto-Crew sets it again
+            agent.update(changes)
         config.save_settings(settings)
     return {"status": "saved", "count": len(agents)}
 
@@ -92,6 +97,25 @@ def update_run_settings(run: RunSettings) -> dict:
         settings["run"] = run.model_dump()
         config.save_settings(settings)
     return {"status": "saved", "run": settings["run"]}
+
+
+@router.get("/mode")
+def get_mode() -> dict:
+    """privacy, hybrid, cloud, or custom when the crew matches none of them."""
+    return {"mode": crew.current_mode(config.load_settings())}
+
+
+@router.put("/mode")
+def set_mode(body: ModeRequest) -> dict:
+    """Switch the crew to Privacy, Hybrid or Cloud mode.
+
+    Only agents in the wrong place move: local ones get an Auto-Crew pick,
+    cloud ones get cloud_model. The notice says what goes to which provider.
+    """
+    try:
+        return crew.switch_mode(body.mode, body.cloud_model)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from None
 
 
 @router.put("/keys")

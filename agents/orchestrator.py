@@ -9,7 +9,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from agents.agents import create_all_agents, create_agent_subset, AGENT_COLORS, AGENT_ICONS, AGENT_INFO
-from agents.message_bus import message_bus, AgentMessage
+from juli.bus import message_bus, AgentMessage
 
 
 # ─────────────────────────────────────────────────────────────

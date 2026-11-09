@@ -1,0 +1,144 @@
+"""
+JULI: FastAPI app factory.
+
+Run with `uvicorn --factory juli.api.app:create_app`. Every /api route except
+GET /api/health needs `Authorization: Bearer <token>`. The WebSocket at /ws
+needs an auth message first and an allowed Origin.
+"""
+
+import asyncio
+import logging
+import os
+from contextlib import asynccontextmanager
+
+from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+
+from juli import __version__, config, store
+from juli.api import projects, security, settings, tasks
+from juli.bus import AgentMessage, message_bus
+
+log = logging.getLogger(__name__)
+
+# Seconds a WebSocket client has to send its auth message.
+WS_AUTH_TIMEOUT = 5.0
+
+
+class ConnectionManager:
+    """Authenticated WebSocket connections."""
+
+    def __init__(self) -> None:
+        self.active_connections: list[WebSocket] = []
+
+    def add(self, websocket: WebSocket) -> None:
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: dict) -> None:
+        for connection in list(self.active_connections):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                self.disconnect(connection)
+
+
+async def message_bridge(manager: ConnectionManager) -> None:
+    """Forward bus messages to every connected WebSocket client."""
+    queue = message_bus.subscribe_async()
+    try:
+        while True:
+            msg: AgentMessage = await queue.get()
+            await manager.broadcast(msg.to_dict())
+    finally:
+        message_bus.unsubscribe_async(queue)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    store.init_db()
+    config.migrate_legacy_settings()
+    message_bus.set_persister(store.save_message)
+    task = asyncio.create_task(message_bridge(app.state.connections))
+    yield
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    message_bus.set_persister(None)
+
+
+def create_app(token: str | None = None) -> FastAPI:
+    token = token or os.environ.get("JULI_TOKEN")
+    if not token:
+        # Never generate-and-print: the token would end up in terminal logs.
+        raise RuntimeError("JULI_TOKEN is not set. Start JULI with `python run.py`, which creates one.")
+
+    debug = os.environ.get("JULI_DEBUG") == "1"
+    app = FastAPI(
+        title="JULI",
+        version=__version__,
+        lifespan=lifespan,
+        docs_url="/docs" if debug else None,
+        redoc_url=None,
+        openapi_url="/openapi.json" if debug else None,
+    )
+    app.state.token = token
+    app.state.connections = ConnectionManager()
+    app.state.limiter = security.RateLimiter()
+
+    # The last middleware added runs first: headers wrap everything, 429s included.
+    app.middleware("http")(app.state.limiter.middleware)
+    app.middleware("http")(security.security_headers)
+
+    @app.get("/api/health")
+    def health() -> dict:
+        return {"status": "ok", "version": __version__}
+
+    auth = [Depends(security.require_token)]
+    for module in (tasks, projects, settings):
+        app.include_router(module.router, prefix="/api", dependencies=auth)
+
+    @app.websocket("/ws")
+    async def websocket_endpoint(websocket: WebSocket) -> None:
+        """Live agent messages. First message must be {"type":"auth","token":...}."""
+        # Accept before refusing, so browsers see the close code (a refused
+        # handshake surfaces only as 1006) and the client stops reconnecting.
+        await websocket.accept()
+        if not security.origin_allowed(websocket.headers.get("origin")):
+            await websocket.close(code=4403)
+            return
+        try:
+            hello = await asyncio.wait_for(websocket.receive_json(), WS_AUTH_TIMEOUT)
+        except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+            hello = None
+        if not (
+            isinstance(hello, dict)
+            and hello.get("type") == "auth"
+            and security.token_matches(app.state.token, hello.get("token"))
+        ):
+            await websocket.close(code=4401)
+            return
+
+        manager: ConnectionManager = app.state.connections
+        await websocket.send_json(
+            AgentMessage(
+                agent_name="System",
+                content=f"Connected to JULI — Status: {message_bus.task_status}",
+                message_type="status",
+            ).to_dict()
+        )
+        for msg in message_bus.history:
+            await websocket.send_json(msg.to_dict())
+        manager.add(websocket)
+        try:
+            while True:
+                await websocket.receive_text()  # tasks start via REST only
+        except WebSocketDisconnect:
+            pass
+        finally:
+            manager.disconnect(websocket)
+
+    return app

@@ -17,7 +17,7 @@ from rich.rule import Rule
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agents.message_bus import message_bus, AgentMessage
+from juli.bus import message_bus, AgentMessage
 from agents.orchestrator import run_task, get_agent_info
 from agents.agents import AGENT_ICONS
 

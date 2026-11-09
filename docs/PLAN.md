@@ -28,8 +28,7 @@ What sets it apart from other local AI workspaces:
 
 - **One stacked PR per phase.** Each phase branch is based on the previous phase's branch, and its PR targets that branch, so every diff shows only that phase. CodeRabbit reviews each PR.
 - **Before each commit:** run the project's checks, stage, run `gitleaks git --staged`, then commit in a separate command.
-- **Commit trailer:** `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- **PR body ends with:** `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+- **No AI attribution:** no `Co-Authored-By` trailers in commits and no "Generated with" footers in PR bodies.
 
 **Environment on the dev machine:**
 

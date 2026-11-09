@@ -3,6 +3,9 @@ CLAUDE.md
 CLAUDE.local.md
 .claude/
 
+# Private planning docs (kept locally)
+docs/
+
 # Python
 __pycache__/
 *.py[cod]

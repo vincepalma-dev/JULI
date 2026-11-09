@@ -16,8 +16,10 @@ def project_id(client):
         {"prompt": "x" * 20001, "project_id": "p"},
         {"prompt": "hi"},  # project_id is required
         {"prompt": "hi", "project_id": "p", "mode": "everything"},
-        {"prompt": "hi", "project_id": "p", "max_round": 0},
-        {"prompt": "hi", "project_id": "p", "max_round": 51},
+        {"prompt": "hi", "project_id": "p", "max_cycles": 0},
+        {"prompt": "hi", "project_id": "p", "max_cycles": 11},
+        {"prompt": "hi", "project_id": "p", "max_round": 15},  # replaced by max_cycles
+        {"prompt": "hi", "project_id": "p", "discussion_rounds": 5},
         {"prompt": "hi", "project_id": "p", "surprise": True},
     ],
 )
@@ -51,6 +53,11 @@ def test_unknown_project_is_404(client):
         {"name": "Ok", "prompt": "x" * 8001},
         {"name": "Ok", "job_title": "x" * 81},
         {"name": "Ok", "icon": "<svg>"},
+        {"name": "Ok", "model": "gpt4"},  # legacy keys are no longer model refs
+        {"name": "Ok", "model": "openai: spaced"},
+        {"name": "Ok", "role": "boss"},
+        {"name": "Ok", "max_tokens": 0},
+        {"name": "Ok", "max_tokens": 200_001},
     ],
 )
 def test_agent_validation(client, agent):
@@ -76,3 +83,43 @@ def test_key_validation(client, keys):
 
 def test_key_delete_validates_provider(client):
     assert client.delete("/api/settings/keys/Not-Valid", headers=AUTH).status_code == 422
+
+
+def test_unknown_provider_in_model_is_422(client):
+    r = client.post("/api/settings/agents", json={"name": "Ok", "model": "nosuch:model"}, headers=AUTH)
+    assert r.status_code == 422
+    assert client.put("/api/settings/agents", json={"Coder": {"model": "nosuch:m"}}, headers=AUTH).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"budget_usd": 0},
+        {"budget_usd": -1},
+        {"budget_usd": 10_001},
+        {"token_cap": 0},
+        {"token_cap": 100_000_001},
+        {"allowances": {"openai": 0}},
+        {"allowances": {"Bad-Id": 5}},
+        {"discussion_rounds": -1},
+        {"discussion_rounds": 5},
+        {"surprise": 1},
+    ],
+)
+def test_run_settings_validation(client, body):
+    assert client.put("/api/settings/run", json=body, headers=AUTH).status_code == 422
+
+
+@pytest.mark.parametrize("body", [{"action": "maybe"}, {"action": "switch", "model": "not a ref"}, {}])
+def test_decision_validation(client, body):
+    assert client.post("/api/task/decision", json=body, headers=AUTH).status_code == 422
+
+
+@pytest.mark.parametrize("body", [{"content": ""}, {"content": "x" * 4001}, {}])
+def test_task_message_validation(client, body):
+    assert client.post("/api/task/message", json=body, headers=AUTH).status_code == 422
+
+
+@pytest.mark.parametrize("body", [{"agent": "Coder"}, {"agent": "bad name", "message": "q"}, {"agent": "Coder", "message": ""}])
+def test_follow_up_validation(client, body):
+    assert client.post("/api/runs/1/chat", json=body, headers=AUTH).status_code == 422

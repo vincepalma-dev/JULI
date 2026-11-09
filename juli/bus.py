@@ -5,8 +5,9 @@ Agents publish from worker threads; WebSocket consumers read asyncio queues on
 the event loop. publish() hands each message to a queue's own loop with
 loop.call_soon_threadsafe and drops it if that queue is full.
 
-The bus knows nothing about storage: the API registers a persister callback
-at startup.
+Chunk messages (streamed text) are live only: they are neither kept in the
+in-memory history nor stored. The bus knows nothing about storage: the API
+registers a persister callback at startup.
 """
 
 import asyncio
@@ -30,7 +31,13 @@ class AgentMessage:
     agent_name: str
     content: str
     timestamp: str = field(default_factory=_now)
-    message_type: str = "agent"  # agent, system, error, status
+    # agent, chunk, system, warning, error, status, decision, limit_reached
+    message_type: str = "agent"
+    model: str | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
+    data: dict | None = None  # structured details, e.g. a decision's options
 
     def to_dict(self) -> dict:
         return {
@@ -38,10 +45,18 @@ class AgentMessage:
             "content": self.content,
             "timestamp": self.timestamp,
             "message_type": self.message_type,
+            "model": self.model,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "cost_usd": self.cost_usd,
+            "data": self.data,
         }
 
 
 Persister = Callable[[str, int | None, dict], None]
+
+# A paused run still owns the bus: no other task may start meanwhile.
+BUSY = ("running", "paused")
 
 
 class MessageBus:
@@ -53,7 +68,7 @@ class MessageBus:
         self._async_queues: list[tuple[asyncio.AbstractEventLoop, asyncio.Queue]] = []
         self._sync_callbacks: list[Callable[[AgentMessage], None]] = []
         self._persister: Persister | None = None
-        self._task_status: str = "idle"  # idle, running, complete, error
+        self._task_status: str = "idle"  # idle, running, paused, complete, stopped, error
         self._current_task: str | None = None
         self.active_project_id: str | None = None
         self.active_run_id: int | None = None
@@ -78,7 +93,7 @@ class MessageBus:
     def try_begin_task(self, task: str, project_id: str | None = None) -> bool:
         """Atomically mark a task as running in a project. False if one already is."""
         with self._lock:
-            if self._task_status == "running":
+            if self._task_status in BUSY:
                 return False
             self._task_status = "running"
             self._current_task = task
@@ -102,13 +117,15 @@ class MessageBus:
 
     def publish(self, message: AgentMessage) -> None:
         """Publish a message to all subscribers. Safe to call from any thread."""
+        live_only = message.message_type == "chunk"
         with self._lock:
-            self._history.append(message)
+            if not live_only:
+                self._history.append(message)
             queues = list(self._async_queues)
             callbacks = list(self._sync_callbacks)
             project_id, run_id = self.active_project_id, self.active_run_id
 
-        if self._persister and project_id and message.message_type != "status":
+        if self._persister and project_id and not live_only and message.message_type != "status":
             try:
                 self._persister(project_id, run_id, message.to_dict())
             except Exception:
@@ -164,7 +181,7 @@ class MessageBus:
             except TypeError:
                 pass
         with self._lock:
-            if self._task_status == "running":
+            if self._task_status in BUSY:
                 return self.active_project_id == project_id
             self.active_project_id = project_id
             self.active_run_id = None
@@ -182,7 +199,7 @@ class MessageBus:
         function such as `store.delete_project`.
         """
         with self._lock:
-            if self._task_status == "running" and self.active_project_id == project_id:
+            if self._task_status in BUSY and self.active_project_id == project_id:
                 return None
             deleted = delete(project_id)
             if deleted and self.active_project_id == project_id:

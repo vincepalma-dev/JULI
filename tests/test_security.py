@@ -88,6 +88,8 @@ def test_route_groups():
     assert route_group("PUT", "/api/settings/keys") == ("keys", 10)
     assert route_group("DELETE", "/api/settings/keys/openai") == ("keys", 10)
     assert route_group("POST", "/api/projects") == ("mutate", 60)
+    assert route_group("POST", "/api/runs/3/chat") == ("chat", 30)
+    assert route_group("POST", "/api/task/message") == ("mutate", 60)
     assert route_group("GET", "/api/projects") is None
 
 

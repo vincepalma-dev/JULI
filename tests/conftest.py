@@ -1,16 +1,18 @@
-import sys
+import json
 import threading
 import types
 
+import httpx
+import httpx2
 import keyring
 import pytest
 from fastapi.testclient import TestClient
 from keyring.backend import KeyringBackend
 from keyring.errors import PasswordDeleteError
 
-from juli import config, keystore
+from juli import config, keystore, providers
 from juli.api.app import create_app
-from juli.bus import message_bus
+from juli.bus import AgentMessage, message_bus
 
 TOKEN = "test-token-0123456789"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -51,7 +53,7 @@ def isolated(tmp_path, monkeypatch, memory_keyring):
     monkeypatch.setattr(config, "LEGACY_SETTINGS_FILE", tmp_path / "legacy-settings.json")
     monkeypatch.setattr(keystore, "ENV_FILE", tmp_path / ".env")
     keystore._dotenv.cache_clear()
-    for var in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GOOGLE_API_KEY", "JULI_TOKEN", "JULI_ALLOWED_ORIGINS"):
+    for var in [keystore.env_var(p) for p in providers.PROVIDERS] + ["JULI_TOKEN", "JULI_ALLOWED_ORIGINS"]:
         monkeypatch.delenv(var, raising=False)
     message_bus._task_status = "idle"
     message_bus.active_project_id = None
@@ -67,21 +69,66 @@ def client():
         yield c
 
 
+class FakeNet:
+    """Serves recorded responses to the provider SDKs (httpx2) and httpx.
+
+    With no handler set, every request fails as if offline, so no test can
+    reach the network. A handler takes the request and returns
+    (status, body, headers); a dict or list body is sent as JSON.
+    """
+
+    def __init__(self) -> None:
+        self.handler = None
+        self.requests: list = []
+
+    def transport(self, lib):
+        def handle(request):
+            self.requests.append(request)
+            if self.handler is None:
+                raise lib.ConnectError("network disabled in tests", request=request)
+            status, body, headers = self.handler(request)
+            headers = dict(headers or {})
+            if isinstance(body, (dict, list)):
+                body = json.dumps(body)
+                headers.setdefault("content-type", "application/json")
+            if isinstance(body, str):
+                body = body.encode()
+            return lib.Response(status, headers=headers, content=body)
+
+        return lib.MockTransport(handle)
+
+
+@pytest.fixture(autouse=True)
+def net(monkeypatch):
+    fake = FakeNet()
+    monkeypatch.setattr(providers, "SDK_HTTP_CLIENT", lambda: httpx2.Client(transport=fake.transport(httpx2)))
+    monkeypatch.setattr(providers, "HTTP_TRANSPORT", fake.transport(httpx))
+    return fake
+
+
 @pytest.fixture
 def fake_engine(monkeypatch):
-    """Stand-in for agents.orchestrator, so tests never need pyautogen."""
+    """Stand-in for juli.engine.execute: no model calls, a fixed answer and usage."""
+    from juli import engine
+
     calls = []
     done = threading.Event()
 
-    def run_task(prompt, **kwargs):
-        from juli.bus import AgentMessage
-
-        message_bus.publish(AgentMessage(agent_name="Coder", content=f"answer to {prompt}"))
-        message_bus.set_task_status("complete")
-        calls.append(prompt)
+    def execute(run):
+        run.bus.publish(
+            AgentMessage(
+                agent_name="Coder",
+                content=f"answer to {run.prompt}",
+                model="openai:gpt-6.1-sol",
+                tokens_in=10,
+                tokens_out=5,
+                cost_usd=0.001,
+            )
+        )
+        run.bus.set_task_status("complete")
+        calls.append(run)
         done.set()
+        return engine.RunResult("complete", 10, 5, 0.001)
 
-    module = types.ModuleType("agents.orchestrator")
-    module.run_task = run_task  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "agents.orchestrator", module)
+    monkeypatch.setattr(engine, "execute", execute)
     return types.SimpleNamespace(calls=calls, done=done)

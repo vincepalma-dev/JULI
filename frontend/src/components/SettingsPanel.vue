@@ -73,7 +73,7 @@
                   @change="updateAgentField(name, 'model', $event.target.value)"
                   class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 bg-juli-bg"
                 >
-                  <option v-for="m in availableModels" :key="m" :value="m">{{ modelLabel(m) }}</option>
+                  <option v-for="m in settings.available_models" :key="m" :value="m">{{ modelLabel(m) }}</option>
                 </select>
               </div>
               </div>
@@ -130,7 +130,7 @@
               <div>
                 <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Model</label>
                 <select v-model="newAgent.model" class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 bg-juli-bg">
-                  <option v-for="m in availableModels" :key="m" :value="m">{{ modelLabel(m) }}</option>
+                  <option v-for="m in settings.available_models" :key="m" :value="m">{{ modelLabel(m) }}</option>
                 </select>
               </div>
               <div>
@@ -296,7 +296,7 @@ const saveMessage = ref('')
 const settings = reactive({
   agents: {},
   key_hints: {},
-  available_models: ['gpt4', 'claude', 'gemini', 'gemini_flash'],
+  available_models: [],
 })
 
 const apiKeys = reactive({})
@@ -307,7 +307,7 @@ const newProviderKey = ref('')
 
 const newAgent = reactive({
   name: '',
-  model: 'gpt4',
+  model: 'ollama:qwen3:8b',
   prompt: '',
   color: '#6b7280',
   icon: 'system',
@@ -319,8 +319,6 @@ const tabs = [
   { id: 'keys', label: 'API Keys' },
   { id: 'themes', label: 'Themes' },
 ]
-
-const availableModels = ['gpt4', 'claude', 'gemini', 'gemini_flash']
 
 const iconOptions = [
   { id: 'planner', label: 'Planner' },
@@ -368,8 +366,10 @@ const themePresets = [
 const providerLabels = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google AI' }
 const providerColors = { openai: '#10b981', anthropic: '#f59e0b', google: '#3b82f6' }
 
+// Model refs look like "provider:model", e.g. "anthropic:claude-sonnet-5-5".
 function modelLabel(m) {
-  return { gpt4: 'GPT-4 (OpenAI)', claude: 'Claude Opus (Anthropic)', gemini: 'Gemini Pro (Google)', gemini_flash: 'Gemini Flash (Google)' }[m] || m
+  const [provider, ...rest] = m.split(':')
+  return rest.length ? `${rest.join(':')} (${providerLabels[provider] || provider})` : m
 }
 
 function formatName(name) {
@@ -379,9 +379,8 @@ function formatName(name) {
 function buildDefaultAgents() {
   const defaults = {}
   for (const a of props.currentAgents) {
-    const modelKey = { 'GPT-4': 'gpt4', 'Claude Opus': 'claude', 'Gemini': 'gemini', 'Gemini Flash': 'gemini_flash' }[a.model] || 'gpt4'
     defaults[a.name] = {
-      model: modelKey,
+      model: a.model,
       prompt: '',
       color: a.color || '#6b7280',
       icon: a.icon || 'system',

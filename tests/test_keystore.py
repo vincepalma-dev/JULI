@@ -105,7 +105,7 @@ def test_legacy_keys_move_to_keychain(memory_keyring):
     new = json.loads(config.settings_path().read_text(encoding="utf-8"))
     assert "api_keys" not in new
     assert new["providers"] == ["openai", "google"]
-    assert new["agents"] == {"Coder": {"model": "claude"}}
+    assert new["agents"] == {"Coder": {"model": "anthropic:claude-opus-5-5"}}  # legacy key migrated too
 
 
 def test_legacy_left_alone_without_keychain(no_keychain):

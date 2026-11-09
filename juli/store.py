@@ -37,6 +37,7 @@ _MESSAGE_COLUMNS = {
     "model": "TEXT",
     "tokens_in": "INTEGER",
     "tokens_out": "INTEGER",
+    "cost_usd": "REAL",
 }
 
 
@@ -117,8 +118,8 @@ def get_project(project_id: str) -> dict | None:
             return None
         project = dict(row)
         msg_rows = conn.execute(
-            "SELECT agent_name, content, timestamp, message_type FROM messages "
-            "WHERE project_id = ? ORDER BY id ASC",
+            "SELECT agent_name, content, timestamp, message_type, model, tokens_in, tokens_out, cost_usd "
+            "FROM messages WHERE project_id = ? ORDER BY id ASC",
             (project_id,),
         ).fetchall()
         project["messages"] = [dict(mr) for mr in msg_rows]
@@ -133,20 +134,48 @@ def delete_project(project_id: str) -> bool:
 # ─── Runs ────────────────────────────────────────────────────
 
 
-def create_run(project_id: str, prompt: str, mode: str) -> int:
+def find_or_create_project(name: str) -> str:
+    """The id of the most recently updated project with this name, created if missing."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM projects WHERE name = ? ORDER BY updated_at DESC LIMIT 1", (name,)
+        ).fetchone()
+    return row["id"] if row else create_project(name)["id"]
+
+
+def create_run(project_id: str, prompt: str, mode: str, crew_json: str | None = None) -> int:
     ts = now()
     with connect() as conn:
         cur = conn.execute(
-            "INSERT INTO runs (project_id, prompt, mode, status, started_at) VALUES (?, ?, ?, 'running', ?)",
-            (project_id, prompt, mode, ts),
+            "INSERT INTO runs (project_id, prompt, mode, status, crew_json, started_at) "
+            "VALUES (?, ?, ?, 'running', ?, ?)",
+            (project_id, prompt, mode, crew_json, ts),
         )
         conn.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
         return int(cur.lastrowid or 0)
 
 
-def finish_run(run_id: int, status: str) -> None:
+def finish_run(run_id: int, status: str, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float = 0.0) -> None:
     with connect() as conn:
-        conn.execute("UPDATE runs SET status = ?, ended_at = ? WHERE id = ?", (status, now(), run_id))
+        conn.execute(
+            "UPDATE runs SET status = ?, tokens_in = ?, tokens_out = ?, cost_usd = ?, ended_at = ? WHERE id = ?",
+            (status, tokens_in, tokens_out, cost_usd, now(), run_id),
+        )
+
+
+def get_run(run_id: int) -> dict | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def run_messages(run_id: int) -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT agent_name, content, message_type, model FROM messages WHERE run_id = ? ORDER BY id ASC",
+            (run_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
 
 def get_runs(project_id: str) -> list[dict]:
@@ -163,8 +192,8 @@ def save_message(project_id: str, run_id: int | None, message: dict) -> None:
     ts = now()
     with connect() as conn:
         conn.execute(
-            "INSERT INTO messages (project_id, run_id, agent_name, content, timestamp, message_type) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO messages (project_id, run_id, agent_name, content, timestamp, message_type, "
+            "model, tokens_in, tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 project_id,
                 run_id,
@@ -172,6 +201,34 @@ def save_message(project_id: str, run_id: int | None, message: dict) -> None:
                 message.get("content", ""),
                 message.get("timestamp") or ts,
                 message.get("message_type", "agent"),
+                message.get("model"),
+                message.get("tokens_in"),
+                message.get("tokens_out"),
+                message.get("cost_usd"),
             ),
         )
         conn.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))
+
+
+def latest_output(project_id: str) -> list[dict]:
+    """The agent messages of the project's latest non-review run that produced any."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT agent_name, content FROM messages WHERE project_id = ? AND message_type = 'agent' "
+            "AND run_id = (SELECT MAX(m.run_id) FROM messages m JOIN runs r ON r.id = m.run_id "
+            "WHERE m.project_id = ? AND m.message_type = 'agent' AND r.mode != 'review') "
+            "ORDER BY id ASC",
+            (project_id, project_id),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def spend_since(provider: str, since: str) -> float:
+    """USD spent on a provider's models since an ISO timestamp (UTC)."""
+    prefix = provider + ":"
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0) FROM messages WHERE substr(model, 1, ?) = ? AND timestamp >= ?",
+            (len(prefix), prefix, since),
+        ).fetchone()
+        return float(row[0])

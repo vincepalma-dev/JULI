@@ -6,7 +6,8 @@ providers exist. Responses show key hints ("••••abcd"), never keys.
 from fastapi import APIRouter, HTTPException, Response
 
 from juli import config, keystore
-from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ProviderId
+from juli import providers as llm
+from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ProviderId, RunSettings
 
 router = APIRouter(prefix="/settings")
 
@@ -16,13 +17,21 @@ KEYCHAIN_HELP = (
 )
 
 
+def _require_known_provider(model: str, settings: dict) -> None:
+    provider = model.partition(":")[0]
+    if llm.provider_info(provider, settings.get("endpoints")) is None:
+        raise HTTPException(422, f"Unknown provider '{provider}' in model '{model}'")
+
+
 @router.get("")
 def get_settings() -> dict:
     settings = config.load_settings()
+    in_use = [a.get("model") for a in settings["agents"].values() if isinstance(a, dict) and a.get("model")]
     return {
         "agents": settings["agents"],
         "key_hints": {p: keystore.key_hint(keystore.get_key(p)) for p in settings["providers"]},
-        "available_models": settings["available_models"],
+        "available_models": list(dict.fromkeys(llm.preset_refs() + settings["available_models"] + in_use)),
+        "run": settings["run"],
     }
 
 
@@ -31,7 +40,11 @@ def update_agents(agents: AgentUpdates) -> dict:
     with config.settings_lock:
         settings = config.load_settings()
         for name, update in agents.items():
-            settings["agents"].setdefault(name, {}).update(update.model_dump(exclude_none=True))
+            # Unset fields stay as they are; an explicit null only clears max_tokens.
+            changes = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None or k == "max_tokens"}
+            if changes.get("model"):
+                _require_known_provider(changes["model"], settings)
+            settings["agents"].setdefault(name, {}).update(changes)
         config.save_settings(settings)
     return {"status": "saved", "count": len(agents)}
 
@@ -42,12 +55,15 @@ def add_agent(agent: AgentCreate) -> dict:
         settings = config.load_settings()
         if agent.name in settings["agents"]:
             raise HTTPException(409, "An agent with this name already exists")
+        _require_known_provider(agent.model, settings)
         settings["agents"][agent.name] = {
+            "role": agent.role,
             "model": agent.model,
             "prompt": agent.prompt or f"You are {agent.name}. Follow instructions precisely.",
             "color": agent.color,
             "icon": agent.icon,
             "job_title": agent.job_title,
+            "max_tokens": agent.max_tokens,
         }
         config.save_settings(settings)
     return {"status": "created", "name": agent.name}
@@ -64,9 +80,27 @@ def delete_agent(name: str) -> Response:
     return Response(status_code=204)
 
 
+@router.put("/run")
+def update_run_settings(run: RunSettings) -> dict:
+    """Budget cap, token cap, Privacy Mode, local fallback and monthly allowances."""
+    with config.settings_lock:
+        settings = config.load_settings()
+        if run.fallback_model:
+            _require_known_provider(run.fallback_model, settings)
+            if not llm.is_local(run.fallback_model, settings.get("endpoints")):
+                raise HTTPException(422, "The fallback model must run locally")
+        settings["run"] = run.model_dump()
+        config.save_settings(settings)
+    return {"status": "saved", "run": settings["run"]}
+
+
 @router.put("/keys")
 def update_api_keys(keys: KeyUpdates) -> dict:
-    """Store keys in the keychain. Empty or masked ("••••") values are skipped."""
+    """Store keys in the keychain, then health-check each saved key.
+
+    Empty or masked ("••••") values are skipped.
+    """
+    saved = []
     with config.settings_lock:
         settings = config.load_settings()
         for provider, key in keys.items():
@@ -76,10 +110,15 @@ def update_api_keys(keys: KeyUpdates) -> dict:
                     keystore.set_key(provider, key)
                 except keystore.KeystoreUnavailable:
                     raise HTTPException(503, KEYCHAIN_HELP) from None
+                saved.append(provider)
             if provider not in settings["providers"]:
                 settings["providers"].append(provider)
         config.save_settings(settings)
-    return {"status": "saved"}
+    # Network checks run outside the settings lock.
+    health = {
+        p: llm.check(p, settings.get("endpoints"), privacy=settings["run"]["privacy_mode"]) for p in saved
+    }
+    return {"status": "saved", "health": health}
 
 
 @router.delete("/keys/{provider}", status_code=204)

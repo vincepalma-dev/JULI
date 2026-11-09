@@ -24,8 +24,11 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 def check_dependencies():
     """Check if required dependencies are installed."""
     try:
+        import anthropic  # noqa: F401
         import fastapi  # noqa: F401
+        import httpx  # noqa: F401
         import keyring  # noqa: F401
+        import openai  # noqa: F401
         import uvicorn  # noqa: F401
     except ImportError as e:
         print(f"  Missing Python dependency: {e.name}")

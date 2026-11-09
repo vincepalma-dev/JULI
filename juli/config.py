@@ -12,7 +12,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from juli import keystore
+from juli import keystore, roles
 
 log = logging.getLogger(__name__)
 
@@ -22,24 +22,24 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 LEGACY_SETTINGS_FILE = ROOT_DIR / "settings.json"
 
 DEFAULT_PROVIDERS = ["openai", "anthropic", "google"]
-DEFAULT_MODELS = ["gpt4", "claude", "gemini", "gemini_flash"]
 
-DEFAULT_AGENT_MODEL_MAP = {
-    "PlannerResearcher": "gpt4",
-    "Coder": "claude",
-    "ReviewerSecurity": "gpt4",
-    "DevOps": "gemini",
-    "TestMonitor": "gemini",
-    "DocsDiagram": "gemini_flash",
+# Optional run limits and switches. Empty (None) means no limit.
+DEFAULT_RUN = {
+    "budget_usd": None,
+    "token_cap": None,
+    "privacy_mode": False,
+    "auto_fallback": False,
+    "fallback_model": None,
+    "discussion_rounds": 0,  # crew discussion of the plan; 0 is off
+    "allowances": {},
 }
 
-DEFAULT_AGENT_ICONS = {
-    "PlannerResearcher": "planner",
-    "Coder": "coder",
-    "ReviewerSecurity": "reviewer",
-    "DevOps": "devops",
-    "TestMonitor": "test",
-    "DocsDiagram": "docs",
+# Model keys saved before provider:model refs, mapped to the verified presets.
+LEGACY_MODEL_REFS = {
+    "gpt4": "openai:gpt-6.1-sol",
+    "claude": "anthropic:claude-opus-5-5",
+    "gemini": "google:gemini-4-argon",
+    "gemini_flash": "google:gemini-3.8-flash",
 }
 
 # Serialises read-modify-write cycles on settings.json across request threads.
@@ -62,23 +62,41 @@ def db_path() -> Path:
 
 
 def default_settings() -> dict:
-    # The prompts still live with the AutoGen agents until the Phase 3 engine.
-    from agents.agents import AGENT_COLORS, SYSTEM_PROMPTS
-
     return {
         "agents": {
             name: {
-                "model": DEFAULT_AGENT_MODEL_MAP.get(name, "gpt4"),
+                "role": roles.DEFAULT_ROLES[name],
+                "model": roles.DEFAULT_AGENT_MODEL_MAP[name],
                 "prompt": prompt,
-                "color": AGENT_COLORS.get(name, "#6b7280"),
-                "icon": DEFAULT_AGENT_ICONS.get(name, "system"),
+                "color": roles.AGENT_COLORS.get(name, "#6b7280"),
+                "icon": roles.DEFAULT_AGENT_ICONS.get(name, "system"),
                 "job_title": f"{name} Specialist",
             }
-            for name, prompt in SYSTEM_PROMPTS.items()
+            for name, prompt in roles.SYSTEM_PROMPTS.items()
         },
         "providers": list(DEFAULT_PROVIDERS),
-        "available_models": list(DEFAULT_MODELS),
+        "available_models": [],
+        "run": {**DEFAULT_RUN, "allowances": {}},
     }
+
+
+def upgrade_models(data: dict) -> bool:
+    """Replace legacy model keys with provider:model refs, in place.
+
+    Only the model fields change; every other user edit is kept. True if
+    anything changed.
+    """
+    changed = False
+    for agent in (data.get("agents") or {}).values():
+        if isinstance(agent, dict) and agent.get("model") in LEGACY_MODEL_REFS:
+            agent["model"] = LEGACY_MODEL_REFS[agent["model"]]
+            changed = True
+    models = data.get("available_models") or []
+    if any(m in LEGACY_MODEL_REFS for m in models):
+        upgraded = [LEGACY_MODEL_REFS.get(m, m) for m in models]
+        data["available_models"] = list(dict.fromkeys(upgraded))
+        changed = True
+    return changed
 
 
 def _read_json(path: Path) -> dict | None:
@@ -111,7 +129,9 @@ def load_settings() -> dict:
     data.pop("api_keys", None)  # never hand legacy secrets onwards
     data.setdefault("agents", {})
     data.setdefault("providers", list(DEFAULT_PROVIDERS))
-    data.setdefault("available_models", list(DEFAULT_MODELS))
+    data.setdefault("available_models", [])
+    data["run"] = {**DEFAULT_RUN, "allowances": {}, **(data.get("run") or {})}
+    upgrade_models(data)
     return data
 
 
@@ -121,6 +141,16 @@ def save_settings(settings: dict) -> None:
 
 
 def migrate_legacy_settings() -> None:
+    """Startup migrations: keys into the keychain, legacy model keys to refs."""
+    _migrate_keys()
+    with settings_lock:
+        data = _read_json(settings_path())
+        if data is not None and upgrade_models(data):
+            save_settings(data)
+            log.info("Updated saved agent models to provider:model refs.")
+
+
+def _migrate_keys() -> None:
     """
     Move API keys out of settings.json and into the OS keychain.
 

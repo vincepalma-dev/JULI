@@ -126,14 +126,10 @@ function handleAgentsUpdated(agentsConfig) {
     name,
     icon: config.icon || 'system',
     color: config.color || '#6b7280',
-    model: modelLabel(config.model || 'gpt4'),
+    model: config.model || '',
     job_title: config.job_title || ''
   }))
   agents.value = updated
-}
-
-function modelLabel(m) {
-  return { gpt4: 'GPT-4', claude: 'Claude Opus', gemini: 'Gemini', gemini_flash: 'Gemini Flash' }[m] || m
 }
 
 // ─── Computed ───────────────────────────────────────────

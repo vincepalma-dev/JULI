@@ -32,6 +32,9 @@ def test_history_survives_a_second_task(client, fake_engine):
     runs = store.get_runs(pid)
     assert [r["prompt"] for r in runs] == ["one", "two"]
     assert all(r["status"] == "complete" for r in runs)
+    # Run totals and the crew are filled in.
+    assert (runs[0]["tokens_in"], runs[0]["tokens_out"], runs[0]["cost_usd"]) == (10, 5, 0.001)
+    assert "PlannerResearcher" in runs[0]["crew_json"]
 
     contents = [m["content"] for m in client.get(f"/api/projects/{pid}", headers=AUTH).json()["messages"]]
     assert contents == ["answer to one", "answer to two"]
@@ -88,3 +91,13 @@ def test_deleting_the_active_project_stops_routing_messages_to_it(client):
     client.put(f"/api/projects/{pid}/activate", headers=AUTH)
     assert client.delete(f"/api/projects/{pid}", headers=AUTH).status_code == 204
     assert message_bus.active_project_id is None
+
+
+def test_review_source_skips_earlier_review_runs():
+    store.init_db()
+    pid = store.create_project("P")["id"]
+    build = store.create_run(pid, "build", "full")
+    store.save_message(pid, build, {"agent_name": "Coder", "content": "the code"})
+    review = store.create_run(pid, "check", "review")
+    store.save_message(pid, review, {"agent_name": "ReviewerSecurity", "content": "the review"})
+    assert [m["content"] for m in store.latest_output(pid)] == ["the code"]

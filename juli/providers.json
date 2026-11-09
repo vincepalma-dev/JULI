@@ -1,0 +1,35 @@
+{
+  "providers": {
+    "openai": {"label": "OpenAI", "kind": "openai", "base_url": "https://api.openai.com/v1"},
+    "anthropic": {"label": "Anthropic", "kind": "anthropic", "base_url": "https://api.anthropic.com"},
+    "google": {
+      "label": "Google Gemini",
+      "kind": "openai",
+      "errors": "gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"
+    },
+    "openrouter": {"label": "OpenRouter", "kind": "openai", "base_url": "https://openrouter.ai/api/v1"},
+    "groq": {"label": "Groq", "kind": "openai", "base_url": "https://api.groq.com/openai/v1"},
+    "deepseek": {"label": "DeepSeek", "kind": "openai", "base_url": "https://api.deepseek.com/v1"},
+    "mistral": {"label": "Mistral", "kind": "openai", "base_url": "https://api.mistral.ai/v1"},
+    "xai": {"label": "xAI", "kind": "openai", "base_url": "https://api.x.ai/v1"},
+    "ollama": {"label": "Ollama", "kind": "ollama", "base_url": "http://localhost:11434", "key": false}
+  },
+  "models": {
+    "openai:gpt-6-astra": {"in": 10, "out": 50},
+    "openai:gpt-6.1-sol": {"in": 2, "out": 10},
+    "openai:gpt-6.1-terra": {"in": 1, "out": 5},
+    "openai:gpt-6-luna": {"in": 0.10, "out": 0.50},
+    "anthropic:claude-opus-5-5": {"in": 4, "out": 20, "max_output": 128000},
+    "anthropic:claude-sonnet-5-5": {"in": 2, "out": 10, "max_output": 128000},
+    "anthropic:claude-haiku-5-5": {
+      "in": 0.10,
+      "out": 0.50,
+      "max_output": 128000,
+      "long_context": {"above": 100000, "in": 0.50, "out": 2.50}
+    },
+    "google:gemini-4-argon": {"in": 4, "out": 20},
+    "google:gemini-3.8-flash": {"in": 1.50, "out": 7.50},
+    "google:gemini-3.5-flash-lite": {"in": 0.30, "out": 2.50}
+  }
+}

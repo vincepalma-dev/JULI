@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 
 from juli import __version__, config, store
-from juli.api import projects, security, settings, tasks
+from juli.api import projects, providers, security, settings, tasks
 from juli.bus import AgentMessage, message_bus
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ def create_app(token: str | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     auth = [Depends(security.require_token)]
-    for module in (tasks, projects, settings):
+    for module in (tasks, projects, settings, providers):
         app.include_router(module.router, prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")

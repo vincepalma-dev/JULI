@@ -36,6 +36,13 @@ class Printer:
         kind = msg.message_type
         if kind == "status":
             return
+        if kind == "turn_start":
+            self._end_line()
+            color = self.colors.get(msg.agent_name, "white")
+            activity = (msg.data or {}).get("activity", "working")
+            console.print(f"\n[bold {color}]{escape(msg.agent_name)}[/]  [dim]{escape(msg.model or '')} · {activity}…[/]")
+            self.streaming = msg.agent_name
+            return
         if kind == "chunk":
             if self.streaming != msg.agent_name:
                 self._end_line()

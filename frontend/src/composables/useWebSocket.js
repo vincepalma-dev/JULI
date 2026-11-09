@@ -51,9 +51,10 @@ export function useWebSocket(url = null) {
       reconnectDelay = 1000 // The server accepted our auth: reset backoff
       try {
         const data = JSON.parse(event.data)
-        // Streamed chunks are followed by the agent's full message; live
-        // streaming display comes with the dashboard rework.
-        if (data.message_type === 'chunk') return
+        // Streamed chunks are followed by the agent's full message, and
+        // turn_start drives the "now working" line; both are shown by the
+        // dashboard rework, so skip them here.
+        if (data.message_type === 'chunk' || data.message_type === 'turn_start') return
         messages.value.push({
           agent_name: data.agent_name || 'Unknown',
           content: data.content || '',

@@ -583,3 +583,50 @@ def test_follow_up_respects_privacy_mode(client, monkeypatch):
     client.put("/api/settings/run", json={"privacy_mode": True}, headers=AUTH)
     r = client.post(f"/api/runs/{run_id}/chat", json={"agent": "Coder", "message": "q"}, headers=AUTH)
     assert r.status_code == 409 and "Privacy Mode" in r.json()["detail"]
+
+
+# ─── turn_start ──────────────────────────────────────────────
+
+
+def test_turn_start_comes_before_each_turns_text(models, bus):
+    make_run(bus, mode="code").execute()
+    starts = of_type(bus, "turn_start")
+    assert [(m.agent_name, m.model, m.data) for m in starts] == [
+        ("Planner", "ollama:plan", {"role": "planner", "activity": "planning"}),
+        ("Coder", "ollama:code", {"role": "coder", "activity": "coding"}),
+        ("Reviewer", "ollama:review", {"role": "reviewer", "activity": "reviewing"}),
+    ]
+    assert starts[1].content == "Coder is coding…"
+    kinds = [m.message_type for m in bus.events if m.agent_name == "Coder"]
+    assert kinds[0] == "turn_start" and kinds[1] == "chunk" and kinds[-1] == "agent"
+
+
+def test_turn_start_names_discussion_and_revision(models, bus):
+    models.replies.update(
+        {"ollama:code": ["PLAN: CHANGES NEEDED", "code"], "ollama:review": ["PLAN: AGREED", APPROVED]}
+    )
+    make_run(bus, mode="code", discussion_rounds=1).execute()
+    activities = [m.data["activity"] for m in of_type(bus, "turn_start")]
+    assert activities[:4] == ["planning", "discussing the plan", "discussing the plan", "revising the plan"]
+
+
+def test_turn_start_again_after_switching_model(models, bus):
+    models.replies["ollama:code"] = ProviderError("openai", "bad key", KeyProblem("invalid", "the API key was rejected"))
+    thread, results = run_in_thread(make_run(bus, mode="code"))
+    wait_for(lambda: of_type(bus, "decision"))
+    engine.decide("switch", "ollama:spare")
+    thread.join(5)
+    coder_starts = [m.model for m in of_type(bus, "turn_start") if m.agent_name == "Coder"]
+    assert coder_starts == ["ollama:code", "ollama:spare"]
+
+
+def test_turn_start_is_live_but_not_stored():
+    bus = MessageBus()
+    saved = []
+    bus.set_persister(lambda pid, rid, msg: saved.append(msg["message_type"]))
+    bus.start_run("p", 1)
+    from juli.bus import AgentMessage
+
+    bus.publish(AgentMessage("Coder", "Coder is coding…", message_type="turn_start"))
+    assert saved == []
+    assert [m.message_type for m in bus.history] == ["turn_start"]

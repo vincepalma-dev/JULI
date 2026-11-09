@@ -81,6 +81,18 @@ DEFAULT_AGENT_ICONS = {
     "DocsDiagram": "docs",
 }
 
+# What a turn is doing, by role or by protocol, for turn_start events.
+ACTIVITIES = {
+    "planner": "planning",
+    "coder": "coding",
+    "reviewer": "reviewing",
+    "tester": "testing",
+    "docs": "writing docs",
+    "custom": "working",
+    "discuss": "discussing the plan",
+    "revise": "revising the plan",
+}
+
 # Appended to an agent's prompt so the pipeline works whatever the user edits.
 PROTOCOL = {
     "coder": (

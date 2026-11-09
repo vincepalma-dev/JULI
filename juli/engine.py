@@ -379,7 +379,16 @@ class Run:
         if notes:
             brief += "\n\n" + _brief(("Notes from the user (these take priority)", "\n\n".join(notes)))
         messages = [{"role": "system", "content": system}, {"role": "user", "content": brief}]
+        activity = roles.ACTIVITIES.get(protocol or agent.role, "working")
         while True:
+            # Who is working now, before any text arrives (thinking models start silent).
+            self._publish(
+                agent.name,
+                f"{agent.name} is {activity}…",
+                "turn_start",
+                model=agent.model,
+                data={"role": agent.role, "activity": activity},
+            )
             try:
                 return self._call(agent, messages)
             except providers.ProviderError as e:

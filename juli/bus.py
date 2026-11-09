@@ -6,7 +6,8 @@ the event loop. publish() hands each message to a queue's own loop with
 loop.call_soon_threadsafe and drops it if that queue is full.
 
 Chunk messages (streamed text) are live only: they are neither kept in the
-in-memory history nor stored. The bus knows nothing about storage: the API
+in-memory history nor stored. turn_start messages stay in the live view (so a
+client that reconnects knows who is working) but aren't stored either. The bus knows nothing about storage: the API
 registers a persister callback at startup.
 """
 
@@ -54,6 +55,9 @@ class AgentMessage:
 
 
 Persister = Callable[[str, int | None, dict], None]
+
+# Message types that never reach the persister.
+NOT_STORED = ("status", "chunk", "turn_start")
 
 # A paused run still owns the bus: no other task may start meanwhile.
 BUSY = ("running", "paused")
@@ -125,7 +129,7 @@ class MessageBus:
             callbacks = list(self._sync_callbacks)
             project_id, run_id = self.active_project_id, self.active_run_id
 
-        if self._persister and project_id and not live_only and message.message_type != "status":
+        if self._persister and project_id and message.message_type not in NOT_STORED:
             try:
                 self._persister(project_id, run_id, message.to_dict())
             except Exception:

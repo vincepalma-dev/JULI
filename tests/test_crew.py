@@ -1,6 +1,6 @@
 import pytest
 
-from juli import config, engine, providers, roles
+from juli import config, engine, keystore, providers, roles
 from juli.local import crew
 
 from .conftest import AUTH
@@ -145,8 +145,8 @@ def test_hybrid_moves_plan_and_review_to_the_cloud(client, laptop):
     assert client.get("/api/settings", headers=AUTH).json()["mode"] == "hybrid"
 
 
-def test_cloud_then_privacy(client, laptop, memory_keyring):
-    memory_keyring.set_password("juli", "anthropic", "sk-ant-not-a-real-key-1234")
+def test_cloud_then_privacy(client, laptop):
+    keystore.set_key("anthropic", "not-a-real-key-1234")  # the in-memory test keychain
     body = client.put("/api/settings/mode", json={"mode": "cloud", "cloud_model": SONNET}, headers=AUTH).json()
     assert len(body["changed"]) == 6 and body["warnings"] == []
     assert client.get("/api/settings/mode", headers=AUTH).json() == {"mode": "cloud"}

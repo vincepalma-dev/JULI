@@ -1,6 +1,7 @@
 import json
 import threading
 import types
+from pathlib import Path
 
 import httpx
 import httpx2
@@ -13,6 +14,8 @@ from keyring.errors import PasswordDeleteError
 from juli import config, keystore, providers
 from juli.api.app import create_app
 from juli.bus import AgentMessage, message_bus
+from juli.local import hardware, ollama
+from juli.local.hardware import Readings
 
 TOKEN = "test-token-0123456789"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -132,3 +135,52 @@ def fake_engine(monkeypatch):
 
     monkeypatch.setattr(engine, "execute", execute)
     return types.SimpleNamespace(calls=calls, done=done)
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def fixture_text(name: str) -> str:
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def fixture_json(name: str):
+    return json.loads(fixture_text(name))
+
+
+def serve(routes: dict):
+    """A FakeNet handler from {(method, path): (status, body, headers) or callable}."""
+
+    def handler(request):
+        route = routes.get((request.method, request.url.path))
+        if route is None:
+            return 404, {"error": f"no fixture for {request.method} {request.url.path}"}, {}
+        return route(request) if callable(route) else route
+
+    return handler
+
+
+LAPTOP = Readings(
+    system="Windows",
+    machine="AMD64",
+    cpu="11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+    cores=4,
+    ram_bytes=16_000_000_000,
+    disk_free_bytes=40_000_000_000,
+    models_dir=r"C:\Users\me\.ollama\models",
+    windows_gpus=[("Intel(R) Iris(R) Xe Graphics", None)],
+)
+
+
+@pytest.fixture
+def laptop(monkeypatch):
+    """A 16 GB CPU-only machine with 40 GB of free disk, instead of the real one."""
+    monkeypatch.setattr(hardware, "read", lambda: LAPTOP)
+    return hardware.detect(LAPTOP)
+
+
+@pytest.fixture(autouse=True)
+def fresh_pulls(monkeypatch):
+    jobs = ollama.PullJobs()
+    monkeypatch.setattr(ollama, "PULLS", jobs)
+    return jobs

@@ -1,5 +1,5 @@
 """
-SQLite store (WAL): projects, runs, messages.
+SQLite store (WAL): projects, runs, messages, benchmarks.
 
 Each task gets its own run row, so history is never deleted when a new task
 starts. Deleting a project cascades to its runs and messages.
@@ -81,6 +81,17 @@ def init_db() -> None:
         for column, decl in _MESSAGE_COLUMNS.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE messages ADD COLUMN {column} {decl}")
+        # The latest measured speed of each model on each machine.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS benchmarks (
+                model_ref TEXT NOT NULL,
+                tok_per_sec REAL NOT NULL,
+                prefill_tok_per_sec REAL,
+                hw_fingerprint TEXT NOT NULL,
+                measured_at TEXT NOT NULL,
+                PRIMARY KEY (model_ref, hw_fingerprint)
+            )
+        """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_messages_project ON messages(project_id, id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id, id)")
 
@@ -232,3 +243,23 @@ def spend_since(provider: str, since: str) -> float:
             (len(prefix), prefix, since),
         ).fetchone()
         return float(row[0])
+
+
+# ─── Benchmarks ──────────────────────────────────────────────
+
+
+def save_benchmark(model_ref: str, tok_per_sec: float, prefill_tok_per_sec: float | None, hw_fingerprint: str) -> None:
+    """Store a model's speed on this machine, replacing any earlier measurement."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO benchmarks (model_ref, tok_per_sec, prefill_tok_per_sec, hw_fingerprint, measured_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (model_ref, tok_per_sec, prefill_tok_per_sec, hw_fingerprint, now()),
+        )
+
+
+def get_benchmarks(hw_fingerprint: str) -> dict[str, dict]:
+    """This machine's measured speeds, by model ref."""
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM benchmarks WHERE hw_fingerprint = ?", (hw_fingerprint,)).fetchall()
+        return {row["model_ref"]: dict(row) for row in rows}

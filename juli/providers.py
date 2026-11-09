@@ -269,7 +269,8 @@ def _sdk_http_client() -> Any:
     return SDK_HTTP_CLIENT() if SDK_HTTP_CLIENT else None
 
 
-def _http() -> httpx.Client:
+def http_client() -> httpx.Client:
+    """An httpx client through the HTTP_TRANSPORT test seam. Use it for every direct HTTP call."""
     return httpx.Client(timeout=TIMEOUT, transport=HTTP_TRANSPORT)
 
 
@@ -419,7 +420,7 @@ def _ollama(provider, model, info, messages, max_tokens, num_ctx) -> Iterator[st
     url = info["base_url"].rstrip("/") + "/api/chat"
     tokens_in = tokens_out = 0
     try:
-        with _http() as http, http.stream("POST", url, json=body) as response:
+        with http_client() as http, http.stream("POST", url, json=body) as response:
             if response.status_code >= 400:
                 response.read()
                 raise ProviderError(provider, f"HTTP {response.status_code}: {_error_message(_json_or_text(response))}")
@@ -453,7 +454,8 @@ def check(provider: str, endpoints: Mapping[str, dict] | None = None, privacy: b
     """A cheap call that gives a provider's key a health badge.
 
     status: ok, missing, invalid, out_of_credit, rate_limit, overloaded,
-    unreachable, error, skipped (Privacy Mode) or unknown_provider.
+    unreachable, error, skipped (Privacy Mode) or unknown_provider. For
+    OpenAI-compatible providers, "models" lists the endpoint's model ids.
     """
     result: dict[str, Any] = {"provider": provider, "status": "ok", "detail": ""}
     info = provider_info(provider, endpoints)
@@ -468,13 +470,11 @@ def check(provider: str, endpoints: Mapping[str, dict] | None = None, privacy: b
 
     try:
         if info["kind"] == "ollama":
-            with _http() as http:
-                r = http.get(info["base_url"].rstrip("/") + "/api/version", timeout=CHECK_TIMEOUT)
-            if r.status_code >= 400:
-                raise ProviderError(provider, f"HTTP {r.status_code}")
-            result["detail"] = f"Ollama {r.json().get('version', '')}".strip()
+            from juli.local import ollama  # it imports this module
+
+            result["detail"] = f"Ollama {ollama.version(info['base_url'])}".strip()
         elif provider == "openrouter":
-            with _http() as http:
+            with http_client() as http:
                 r = http.get(OPENROUTER_KEY_URL, headers={"Authorization": f"Bearer {key}"}, timeout=CHECK_TIMEOUT)
             if r.status_code >= 400:
                 raise _status_error(provider, "openai", r.status_code, _json_or_text(r), r.headers, key)
@@ -495,7 +495,7 @@ def check(provider: str, endpoints: Mapping[str, dict] | None = None, privacy: b
                 http_client=_sdk_http_client(),
             )
             with client:
-                client.models.list()
+                result["models"] = sorted(m.id for m in client.models.list())
     except (openai.APIStatusError, anthropic.APIStatusError) as e:
         kind = "anthropic" if info["kind"] == "anthropic" else info.get("errors", "openai")
         err = _status_error(provider, kind, e.status_code, e.body, e.response.headers, key)

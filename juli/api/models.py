@@ -18,6 +18,14 @@ Role = Literal["planner", "coder", "reviewer", "tester", "docs", "custom"]
 MaxTokens = Annotated[int, Field(ge=1, le=200_000)]
 AgentPrompt = Annotated[str, StringConstraints(max_length=8000)]
 JobTitle = Annotated[str, StringConstraints(max_length=80)]
+# An Ollama model: library (qwen3:8b), namespaced (user/model:tag) or Hugging Face (hf.co/owner/repo:Q4_K_M).
+OLLAMA_MODEL_PATTERN = (
+    r"^(?:hf\.co/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}"
+    r"|[a-z0-9][a-z0-9_.-]{0,63}(?:/[a-z0-9][a-z0-9_.-]{0,63})?)(?::[A-Za-z0-9_.-]{1,64})?$"
+)
+OllamaModel = Annotated[str, StringConstraints(pattern=OLLAMA_MODEL_PATTERN)]
+HF_REPO_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,95}/[A-Za-z0-9][A-Za-z0-9_.-]{0,95}$"
+LicenseId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9:/_.-]{0,200}$")]
 
 
 class Strict(BaseModel):
@@ -97,6 +105,36 @@ class RunSettings(Strict):
     fallback_model: ModelRef | None = None
     discussion_rounds: int = Field(default=0, ge=0, le=4)
     allowances: dict[ProviderId, Annotated[float, Field(gt=0, le=10_000)]] = {}
+
+
+class ModeRequest(Strict):
+    """Privacy (all local, enforced), Hybrid (Plan and Review in the cloud) or Cloud."""
+
+    mode: Literal["privacy", "hybrid", "cloud"]
+    cloud_model: ModelRef | None = None  # for the agents that move to the cloud
+
+
+class ModelName(Strict):
+    model: OllamaModel
+
+
+class LicenseAccept(Strict):
+    license: LicenseId
+
+
+class AutoCrewRequest(Strict):
+    agents: list[AgentName] | None = Field(default=None, max_length=50)  # None: every agent
+    apply: bool = False  # save the picks (otherwise only show them)
+    set_fallback: bool = False  # also make the best general model the local fallback
+
+
+class EndpointCreate(Strict):
+    """A custom OpenAI-compatible endpoint, e.g. LM Studio, llama.cpp or vLLM."""
+
+    id: ProviderId
+    label: str = Field(..., min_length=1, max_length=60)
+    base_url: str = Field(..., min_length=1, max_length=300)
+    key: ApiKey | None = None
 
 
 AgentUpdates = dict[AgentName, AgentUpdate]

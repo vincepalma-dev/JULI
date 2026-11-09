@@ -26,6 +26,7 @@ SpeechRecognition>=3.10.0
 # Utilities
 python-dotenv>=1.0.0
 keyring>=25.0.0
+psutil>=5.9.0  # RAM and CPU cores for the model fit check
 
 # Development
 pytest>=8.0.0

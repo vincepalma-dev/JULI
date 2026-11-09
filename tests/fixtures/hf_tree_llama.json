@@ -1,0 +1,164 @@
+[
+ {
+  "type": "file",
+  "size": 2842,
+  "path": ".gitattributes"
+ },
+ {
+  "type": "file",
+  "size": 657289344,
+  "path": "Llama-3.2-1B-Instruct-IQ3_M.gguf",
+  "lfs": {
+   "size": 657289344
+  }
+ },
+ {
+  "type": "file",
+  "size": 743141504,
+  "path": "Llama-3.2-1B-Instruct-IQ4_XS.gguf",
+  "lfs": {
+   "size": 743141504
+  }
+ },
+ {
+  "type": "file",
+  "size": 732524672,
+  "path": "Llama-3.2-1B-Instruct-Q3_K_L.gguf",
+  "lfs": {
+   "size": 732524672
+  }
+ },
+ {
+  "type": "file",
+  "size": 796139648,
+  "path": "Llama-3.2-1B-Instruct-Q3_K_XL.gguf",
+  "lfs": {
+   "size": 796139648
+  }
+ },
+ {
+  "type": "file",
+  "size": 773025920,
+  "path": "Llama-3.2-1B-Instruct-Q4_0.gguf",
+  "lfs": {
+   "size": 773025920
+  }
+ },
+ {
+  "type": "file",
+  "size": 770928768,
+  "path": "Llama-3.2-1B-Instruct-Q4_0_4_4.gguf",
+  "lfs": {
+   "size": 770928768
+  }
+ },
+ {
+  "type": "file",
+  "size": 770928768,
+  "path": "Llama-3.2-1B-Instruct-Q4_0_4_8.gguf",
+  "lfs": {
+   "size": 770928768
+  }
+ },
+ {
+  "type": "file",
+  "size": 770928768,
+  "path": "Llama-3.2-1B-Instruct-Q4_0_8_8.gguf",
+  "lfs": {
+   "size": 770928768
+  }
+ },
+ {
+  "type": "file",
+  "size": 871309440,
+  "path": "Llama-3.2-1B-Instruct-Q4_K_L.gguf",
+  "lfs": {
+   "size": 871309440
+  }
+ },
+ {
+  "type": "file",
+  "size": 807694464,
+  "path": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+  "lfs": {
+   "size": 807694464
+  }
+ },
+ {
+  "type": "file",
+  "size": 775647360,
+  "path": "Llama-3.2-1B-Instruct-Q4_K_S.gguf",
+  "lfs": {
+   "size": 775647360
+  }
+ },
+ {
+  "type": "file",
+  "size": 975118464,
+  "path": "Llama-3.2-1B-Instruct-Q5_K_L.gguf",
+  "lfs": {
+   "size": 975118464
+  }
+ },
+ {
+  "type": "file",
+  "size": 911503488,
+  "path": "Llama-3.2-1B-Instruct-Q5_K_M.gguf",
+  "lfs": {
+   "size": 911503488
+  }
+ },
+ {
+  "type": "file",
+  "size": 892563584,
+  "path": "Llama-3.2-1B-Instruct-Q5_K_S.gguf",
+  "lfs": {
+   "size": 892563584
+  }
+ },
+ {
+  "type": "file",
+  "size": 1021800576,
+  "path": "Llama-3.2-1B-Instruct-Q6_K.gguf",
+  "lfs": {
+   "size": 1021800576
+  }
+ },
+ {
+  "type": "file",
+  "size": 1085415552,
+  "path": "Llama-3.2-1B-Instruct-Q6_K_L.gguf",
+  "lfs": {
+   "size": 1085415552
+  }
+ },
+ {
+  "type": "file",
+  "size": 1321083008,
+  "path": "Llama-3.2-1B-Instruct-Q8_0.gguf",
+  "lfs": {
+   "size": 1321083008
+  }
+ },
+ {
+  "type": "file",
+  "size": 2479595360,
+  "path": "Llama-3.2-1B-Instruct-f16.gguf",
+  "lfs": {
+   "size": 2479595360
+  }
+ },
+ {
+  "type": "file",
+  "size": 1314426,
+  "path": "Llama-3.2-1B-Instruct.imatrix",
+  "lfs": {
+   "size": 1314426
+  }
+ },
+ {
+  "type": "file",
+  "size": 24342,
+  "path": "README.md"
+ }
+]

@@ -31,6 +31,10 @@ Run it entirely on-device with local models, or bring your own cloud API keys. Y
 | 6 | Dashboard UI for all of the above |
 | 7 | Tooling: tests, linting, type checks, CI, secret scanning, docs |
 
+## History
+
+JULI is a rebuild of [Jarvis.AI](https://github.com/vincepalma-dev/Jarvis.AI).
+
 ## License
 
 [MIT](LICENSE)

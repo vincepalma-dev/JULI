@@ -1,0 +1,20 @@
+{
+ "models": [
+  {
+   "name": "qwen3:8b",
+   "model": "qwen3:8b",
+   "modified_at": "2026-11-08T10:12:31.123456+08:00",
+   "size": 5225388164,
+   "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+   "details": {"parent_model": "", "format": "gguf", "family": "qwen3", "families": ["qwen3"], "parameter_size": "8.2B", "quantization_level": "Q4_K_M"}
+  },
+  {
+   "name": "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+   "model": "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+   "modified_at": "2026-11-07T21:03:10.000000+08:00",
+   "size": 807694464,
+   "digest": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+   "details": {"parent_model": "", "format": "gguf", "family": "llama", "families": ["llama"], "parameter_size": "1.2B", "quantization_level": "Q4_K_M"}
+  }
+ ]
+}

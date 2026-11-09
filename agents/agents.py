@@ -3,9 +3,12 @@ JULI — 6 Consolidated AI Agents.
 Optimized for token efficiency with concise system prompts.
 """
 
-import autogen
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
+
 from agents.config import get_config_for_model, AGENT_MODEL_MAP
+
+if TYPE_CHECKING:
+    import autogen
 
 
 # ─────────────────────────────────────────────────────────────
@@ -57,8 +60,10 @@ SYSTEM_PROMPTS = {
 # Agent Factory
 # ─────────────────────────────────────────────────────────────
 
-def create_agent(name: str, system_prompt: str, model_pref: str) -> autogen.AssistantAgent:
+def create_agent(name: str, system_prompt: str, model_pref: str) -> "autogen.AssistantAgent":
     """Create a single AutoGen AssistantAgent."""
+    import autogen  # lazy, so the API can read prompts without pyautogen
+
     config_list = get_config_for_model(model_pref)
     return autogen.AssistantAgent(
         name=name,
@@ -72,8 +77,10 @@ def create_agent(name: str, system_prompt: str, model_pref: str) -> autogen.Assi
     )
 
 
-def create_user_proxy(work_dir: str = "./workspace") -> autogen.UserProxyAgent:
+def create_user_proxy(work_dir: str = "./workspace") -> "autogen.UserProxyAgent":
     """Create UserProxyAgent for code execution and commands."""
+    import autogen
+
     return autogen.UserProxyAgent(
         name="UserProxy",
         human_input_mode="NEVER",
@@ -84,7 +91,7 @@ def create_user_proxy(work_dir: str = "./workspace") -> autogen.UserProxyAgent:
     )
 
 
-def create_all_agents(work_dir: str = "./workspace") -> Dict[str, autogen.Agent]:
+def create_all_agents(work_dir: str = "./workspace") -> Dict[str, "autogen.Agent"]:
     """Create all 6 agents + UserProxy."""
     agents = {}
     for name, prompt in SYSTEM_PROMPTS.items():
@@ -94,7 +101,7 @@ def create_all_agents(work_dir: str = "./workspace") -> Dict[str, autogen.Agent]
     return agents
 
 
-def create_agent_subset(agent_names: list, work_dir: str = "./workspace") -> Dict[str, autogen.Agent]:
+def create_agent_subset(agent_names: list, work_dir: str = "./workspace") -> Dict[str, "autogen.Agent"]:
     """Create a subset of agents for specific modes."""
     agents = {}
     for name in agent_names:

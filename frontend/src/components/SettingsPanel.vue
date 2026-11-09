@@ -165,7 +165,7 @@
           <div v-if="activeTab === 'keys'" class="space-y-4">
             <p class="text-[11px] text-juli-muted leading-relaxed">Configure your LLM API keys. Add any AI provider you need.</p>
 
-            <div v-for="(key, provider) in settings.api_keys" :key="provider" class="glass-card rounded-xl p-4 space-y-2">
+            <div v-for="(hint, provider) in settings.key_hints" :key="provider" class="glass-card rounded-xl p-4 space-y-2">
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <div class="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold" :style="{ backgroundColor: (providerColors[provider] || '#6b7280') + '20', color: providerColors[provider] || '#6b7280' }">
@@ -186,9 +186,10 @@
               <div class="relative">
                 <input
                   :type="showKey[provider] ? 'text' : 'password'"
-                  :value="apiKeys[provider] ?? key"
+                  :value="apiKeys[provider] ?? ''"
                   @input="apiKeys[provider] = $event.target.value"
-                  :placeholder="'Enter ' + (providerLabels[provider] || provider) + ' API key...'"
+                  :placeholder="hint ? 'Saved ' + hint + ' (type to replace)' : 'Enter ' + (providerLabels[provider] || provider) + ' API key...'"
+                  autocomplete="off"
                   class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 pr-8 font-mono"
                 />
                 <button @click="showKey[provider] = !showKey[provider]" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-juli-muted hover:text-white transition-colors">
@@ -279,6 +280,7 @@
 <script setup>
 import { ref, reactive, onMounted, watch } from 'vue'
 import AgentOrb from './AgentOrb.vue'
+import { apiFetch } from '../api.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -293,7 +295,7 @@ const saveMessage = ref('')
 
 const settings = reactive({
   agents: {},
-  api_keys: { openai: '', anthropic: '', google: '' },
+  key_hints: {},
   available_models: ['gpt4', 'claude', 'gemini', 'gemini_flash'],
 })
 
@@ -395,8 +397,8 @@ async function fetchSettings() {
     Object.assign(settings.agents, localDefaults)
   }
   try {
-    const res = await fetch('/api/settings')
-    const data = await res.json()
+    const data = await apiFetch('/api/settings')
+    settings.key_hints = data.key_hints || {}
     if (data.agents && Object.keys(data.agents).length) {
       Object.assign(settings, data)
     }
@@ -415,16 +417,11 @@ async function saveAgents() {
   clearTimeout(saveTimeout)
   saveTimeout = setTimeout(async () => {
     try {
-      await fetch('/api/settings/agents', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings.agents),
-      })
+      await apiFetch('/api/settings/agents', { method: 'PUT', body: settings.agents })
       flash('Settings saved')
       emit('agents-updated', settings.agents)
-    } catch {
-      flash('Saved locally')
-      emit('agents-updated', settings.agents)
+    } catch (e) {
+      flash(`Not saved: ${e.message}`)
     }
   }, 500)
 }
@@ -432,6 +429,10 @@ async function saveAgents() {
 async function addAgent() {
   if (!newAgent.name.trim()) return
   const agentName = newAgent.name.replace(/\s+/g, '')
+  if (settings.agents[agentName]) {
+    flash(`An agent named ${agentName} already exists`)
+    return
+  }
   settings.agents[agentName] = {
     model: newAgent.model,
     prompt: newAgent.prompt || `You are ${newAgent.name}. Follow instructions precisely.`,
@@ -439,12 +440,15 @@ async function addAgent() {
     icon: 'system',
   }
   try {
-    await fetch('/api/settings/agents', {
+    await apiFetch('/api/settings/agents', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: agentName, ...settings.agents[agentName] }),
+      body: { name: agentName, ...settings.agents[agentName] },
     })
-  } catch { /* offline — saved locally */ }
+  } catch (e) {
+    delete settings.agents[agentName]
+    flash(`Not created: ${e.message}`)
+    return
+  }
   newAgent.name = ''
   newAgent.prompt = ''
   showAddAgent.value = false
@@ -453,32 +457,34 @@ async function addAgent() {
 }
 
 async function removeAgent(name) {
-  delete settings.agents[name]
   try {
-    await fetch(`/api/settings/agents/${name}`, { method: 'DELETE' })
-  } catch { /* offline */ }
+    await apiFetch(`/api/settings/agents/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  } catch (e) {
+    flash(`Not removed: ${e.message}`)
+    return
+  }
+  delete settings.agents[name]
   flash('Agent removed')
   emit('agents-updated', settings.agents)
 }
 
 async function saveApiKeys() {
   try {
-    await fetch('/api/settings/keys', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(apiKeys),
-    })
+    await apiFetch('/api/settings/keys', { method: 'PUT', body: apiKeys })
+    for (const p of Object.keys(apiKeys)) delete apiKeys[p]
     flash('API keys saved')
     await fetchSettings()
-  } catch {
-    flash('Saved locally')
+  } catch (e) {
+    flash(`Not saved: ${e.message}`)
   }
 }
 
 function addProvider() {
+  // Provider ids are ^[a-z][a-z0-9_]{0,31}$ on the server.
   const name = newProviderName.value.trim().toLowerCase().replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_]/g, '').replace(/^[^a-z]+/, '').slice(0, 32)
   if (!name) return
-  settings.api_keys[name] = newProviderKey.value || ''
+  settings.key_hints[name] = ''
   apiKeys[name] = newProviderKey.value || ''
   showKey[name] = false
   newProviderName.value = ''
@@ -488,12 +494,17 @@ function addProvider() {
   saveApiKeys()
 }
 
-function removeProvider(provider) {
-  delete settings.api_keys[provider]
+async function removeProvider(provider) {
+  try {
+    await apiFetch(`/api/settings/keys/${encodeURIComponent(provider)}`, { method: 'DELETE' })
+  } catch (e) {
+    flash(`Not removed: ${e.message}`)
+    return
+  }
+  delete settings.key_hints[provider]
   delete apiKeys[provider]
   delete showKey[provider]
   flash('Provider removed')
-  saveApiKeys()
 }
 
 function flash(msg) {

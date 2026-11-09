@@ -24,6 +24,17 @@ VOICE_COLORS = {
 }
 RESET_COLOR = "\033[0m"
 
+WINDOWS_TTS_SCRIPT = (
+    "Add-Type -AssemblyName System.Speech; "
+    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+    "$s.Speak($env:JULI_TTS_TEXT)"
+)
+
+STT_NOTICE = (
+    "Privacy notice: voice input uses Google's online speech recognition. "
+    "Your recorded audio is sent to Google to be transcribed."
+)
+
 
 def speak(text: str, agent_name: str = "System", engine: str = "auto"):
     """
@@ -85,13 +96,12 @@ def _speak_with_engine(text: str, engine: str, agent_name: str):
 
     elif engine == "system":
         if sys.platform == "win32":
-            # Windows SAPI
+            # Windows SAPI. The text travels in an env var and the script is a
+            # constant, so LLM output can never become PowerShell code.
             subprocess.run(
-                ['powershell', '-Command',
-                 f'Add-Type -AssemblyName System.Speech; '
-                 f'$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; '
-                 f'$s.Speak("{text[:200]}")'],
-                capture_output=True
+                ['powershell', '-NoProfile', '-NonInteractive', '-Command', WINDOWS_TTS_SCRIPT],
+                env={**os.environ, "JULI_TTS_TEXT": text[:200]},
+                capture_output=True,
             )
         elif sys.platform == "darwin":
             subprocess.run(['say', text[:200]], capture_output=True)
@@ -132,7 +142,8 @@ def listen(timeout: int = 10, phrase_limit: int = 30) -> Optional[str]:
     try:
         import speech_recognition as sr
         recognizer = sr.Recognizer()
-        
+        print(STT_NOTICE)
+
         with sr.Microphone() as source:
             print("🎤 Listening... (speak now)")
             recognizer.adjust_for_ambient_noise(source, duration=0.5)

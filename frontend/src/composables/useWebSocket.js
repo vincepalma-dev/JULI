@@ -1,22 +1,33 @@
 import { ref, onMounted, onUnmounted } from 'vue'
+import { getToken } from '../api.js'
+
+// Close codes sent by the server when it refuses a connection.
+const AUTH_FAILED = 4401
+const BAD_ORIGIN = 4403
 
 /**
  * WebSocket composable for real-time agent message streaming.
- * Auto-reconnects on disconnect with exponential backoff.
+ * Connects on the page's own origin (the Vite proxy in dev), authenticates
+ * with the session token as its first message, and auto-reconnects with
+ * exponential backoff unless the server refused the session.
  */
 export function useWebSocket(url = null) {
   const messages = ref([])
   const isConnected = ref(false)
-  const status = ref('disconnected') // disconnected, connecting, connected
+  const status = ref('disconnected') // disconnected, connecting, connected, unauthorized
   let ws = null
   let reconnectTimeout = null
   let reconnectDelay = 1000
 
-  // Default to current host
-  const wsUrl = url || `ws://${window.location.hostname}:8000/ws`
+  const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
+  const wsUrl = url || `${scheme}://${window.location.host}/ws`
 
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      return
+    }
+    if (!getToken()) {
+      status.value = 'unauthorized'
       return
     }
 
@@ -31,13 +42,13 @@ export function useWebSocket(url = null) {
     }
 
     ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'auth', token: getToken() }))
       isConnected.value = true
       status.value = 'connected'
-      reconnectDelay = 1000 // Reset backoff
-      console.log('🟢 WebSocket connected')
     }
 
     ws.onmessage = (event) => {
+      reconnectDelay = 1000 // The server accepted our auth: reset backoff
       try {
         const data = JSON.parse(event.data)
         messages.value.push({
@@ -51,15 +62,17 @@ export function useWebSocket(url = null) {
       }
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       isConnected.value = false
+      if (event.code === AUTH_FAILED || event.code === BAD_ORIGIN) {
+        status.value = 'unauthorized'
+        return
+      }
       status.value = 'disconnected'
-      console.log('🔴 WebSocket disconnected')
       scheduleReconnect()
     }
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error)
+    ws.onerror = () => {
       ws.close()
     }
   }
@@ -67,7 +80,6 @@ export function useWebSocket(url = null) {
   function scheduleReconnect() {
     if (reconnectTimeout) clearTimeout(reconnectTimeout)
     reconnectTimeout = setTimeout(() => {
-      console.log(`🔄 Reconnecting in ${reconnectDelay}ms...`)
       connect()
       reconnectDelay = Math.min(reconnectDelay * 2, 10000) // Max 10s
     }, reconnectDelay)
@@ -79,14 +91,9 @@ export function useWebSocket(url = null) {
       reconnectTimeout = null
     }
     if (ws) {
+      ws.onclose = null
       ws.close()
       ws = null
-    }
-  }
-
-  function sendMessage(data) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(data))
     }
   }
 
@@ -108,7 +115,6 @@ export function useWebSocket(url = null) {
     status,
     connect,
     disconnect,
-    sendMessage,
     clearMessages,
   }
 }

@@ -1,203 +1,204 @@
 <template>
-  <div class="flex-1 flex flex-col overflow-hidden relative" style="z-index: 5;">
-    <!-- Filter bar -->
-    <transition name="collapse-fade">
-      <div
-        v-if="selectedAgent"
-        class="flex items-center gap-2 px-5 py-2 glass-light border-b border-juli-border/50"
-      >
-        <span class="text-[10px] text-juli-muted uppercase tracking-wider font-medium">Filtering</span>
-        <span
-          class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full"
-          :style="{ backgroundColor: agentColor(selectedAgent) + '15', color: agentColor(selectedAgent), border: '1px solid ' + agentColor(selectedAgent) + '25' }"
-        >
-          {{ selectedAgent }}
-        </span>
-        <button
-          @click="$emit('clearFilter')"
-          class="text-[10px] text-juli-muted hover:text-white ml-auto flex items-center gap-1 transition-colors"
-        >
-          <span>✕</span> Clear
-        </button>
-      </div>
-    </transition>
-
-    <!-- Messages -->
-    <div ref="scrollContainer" class="flex-1 overflow-y-auto px-5 py-5 space-y-3">
-      <!-- Empty State -->
-      <div v-if="messages.length === 0" class="flex flex-col items-center justify-center h-full">
-        <div class="relative mb-6">
-          <!-- Animated rings -->
-          <div class="absolute inset-0 w-24 h-24 rounded-full border border-juli-accent/10 animate-spin-slow" style="margin: -12px;"></div>
-          <div class="absolute inset-0 w-20 h-20 rounded-full border border-juli-accent/5 animate-spin-slow" style="margin: -4px; animation-direction: reverse; animation-duration: 12s;"></div>
-          <div
-            class="w-16 h-16 rounded-full flex items-center justify-center animate-float"
-            style="background: radial-gradient(circle at 35% 35%, rgba(6, 182, 212, 0.2), rgba(6, 182, 212, 0.05)); border: 1px solid rgba(6, 182, 212, 0.15);"
-          >
-            <!-- Heroicon: sparkles -->
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8 text-juli-accent">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
-            </svg>
-          </div>
-        </div>
-        <p class="text-base font-semibold text-juli-text glow-text">JULI Ready</p>
-        <p class="text-xs text-juli-muted mt-2 text-center max-w-xs">Enter a task above to activate the elite agent team</p>
-      </div>
-
-      <!-- Message Cards -->
-      <div
-        v-for="(msg, i) in messages"
-        :key="i"
-        class="animate-slide-up"
-        :style="{ animationDelay: `${Math.min(i * 30, 300)}ms` }"
-      >
-        <!-- System / Status Messages -->
-        <div v-if="msg.message_type === 'status' || msg.message_type === 'system'" class="flex items-center gap-3 py-2 px-2">
-          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-juli-border to-transparent"></div>
-          <span class="text-[10px] text-juli-muted font-medium flex items-center gap-1.5 shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3 text-juli-accent shrink-0">
-              <path fill-rule="evenodd" d="M8.34 1.804A1 1 0 0 1 9.32 1h1.36a1 1 0 0 1 .98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 0 1 1.262.125l.962.962a1 1 0 0 1 .125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.295a1 1 0 0 1 .804.98v1.361a1 1 0 0 1-.804.98l-1.473.295a6.95 6.95 0 0 1-.587 1.416l.834 1.25a1 1 0 0 1-.125 1.262l-.962.962a1 1 0 0 1-1.262.125l-1.25-.834a6.953 6.953 0 0 1-1.416.587l-.295 1.473a1 1 0 0 1-.98.804H9.32a1 1 0 0 1-.98-.804l-.295-1.473a6.957 6.957 0 0 1-1.416-.587l-1.25.834a1 1 0 0 1-1.262-.125l-.962-.962a1 1 0 0 1-.125-1.262l.834-1.25a6.957 6.957 0 0 1-.587-1.416l-1.473-.295A1 1 0 0 1 1 10.68V9.32a1 1 0 0 1 .804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 0 1 .125-1.262l.962-.962A1 1 0 0 1 5.38 3.03l1.25.834a6.957 6.957 0 0 1 1.416-.587l.294-1.473ZM13 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clip-rule="evenodd" />
-            </svg>
-            {{ msg.content }}
-          </span>
-          <div class="flex-1 h-px bg-gradient-to-r from-transparent via-juli-border to-transparent"></div>
-        </div>
-
-        <!-- Error Messages -->
-        <div
-          v-else-if="msg.message_type === 'error'"
-          class="glass-card rounded-xl px-4 py-3"
-          style="border-color: rgba(239, 68, 68, 0.2); background: rgba(239, 68, 68, 0.05);"
-        >
-          <span class="text-xs font-semibold text-red-400 flex items-center gap-1.5">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
-              <path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clip-rule="evenodd" />
-            </svg>
-            Error
-          </span>
-          <p class="text-sm text-red-300/80 mt-1.5 leading-relaxed">{{ msg.content }}</p>
-        </div>
-
-        <!-- Agent Messages -->
-        <div
-          v-else
-          class="glass-card rounded-xl p-4 group"
-          :style="{
-            borderLeftWidth: '3px',
-            borderLeftColor: agentColor(msg.agent_name) + '80',
-          }"
-        >
-          <!-- Header -->
-          <div class="flex items-center gap-2.5 mb-2.5">
-            <AgentOrb
-              :icon="agentIcon(msg.agent_name)"
-              :color="agentColor(msg.agent_name)"
-              size="sm"
-            />
-            <span class="text-sm font-bold" :style="{ color: agentColor(msg.agent_name) }">
-              {{ agentDisplayName(msg.agent_name) }}
-            </span>
-            <span class="text-[10px] text-juli-muted ml-auto font-mono opacity-0 group-hover:opacity-100 transition-opacity">
-              {{ formatTime(msg.timestamp) }}
-            </span>
-          </div>
-
-          <!-- Content -->
-          <div class="text-[13px] text-gray-300/90 leading-relaxed whitespace-pre-wrap break-words pl-0.5">
-            <template v-if="hasCodeBlock(msg.content)">
-              <div v-for="(block, bIdx) in parseContent(msg.content)" :key="bIdx">
-                <div v-if="block.type === 'code'" class="code-block my-3 relative group/code">
-                  <div class="flex items-center justify-between mb-2 pb-2" style="border-bottom: 1px solid rgba(6, 182, 212, 0.08);">
-                    <span class="text-[9px] text-juli-accent/60 font-mono uppercase tracking-wider">{{ block.lang || 'code' }}</span>
-                    <button
-                      @click="copyCode(block.code)"
-                      class="text-[10px] text-juli-muted hover:text-juli-accent transition-colors flex items-center gap-1"
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
-                        <path d="M7 3.5A1.5 1.5 0 0 1 8.5 2h3.879a1.5 1.5 0 0 1 1.06.44l3.122 3.12A1.5 1.5 0 0 1 17 6.622V12.5a1.5 1.5 0 0 1-1.5 1.5h-1v-3.379a3 3 0 0 0-.879-2.121L10.5 5.379A3 3 0 0 0 8.379 4.5H7v-1Z" />
-                        <path d="M4.5 6A1.5 1.5 0 0 0 3 7.5v9A1.5 1.5 0 0 0 4.5 18h7a1.5 1.5 0 0 0 1.5-1.5v-5.879a1.5 1.5 0 0 0-.44-1.06L9.44 6.439A1.5 1.5 0 0 0 8.378 6H4.5Z" />
-                      </svg>
-                      Copy
-                    </button>
-                  </div>
-                  <pre class="text-xs text-gray-300/80 leading-relaxed">{{ block.code }}</pre>
-                </div>
-                <span v-else>{{ block.text }}</span>
-              </div>
-            </template>
-            <template v-else>{{ msg.content }}</template>
-          </div>
-        </div>
-      </div>
-      <div ref="scrollAnchor"></div>
+  <div class="relative flex min-h-0 flex-1 flex-col">
+    <!-- Agent filter -->
+    <div v-if="filter" class="flex items-center gap-2 border-b border-juli-border px-4 py-2 text-sm sm:px-6">
+      <span class="text-slate-400">Showing only</span>
+      <span class="font-medium" :style="{ color: colorOf(filter) }">{{ agentLabel(filter, agents) }}</span>
+      <button type="button" class="btn btn-secondary ml-auto !min-h-0 !py-1 text-xs" @click="$emit('clear-filter')">
+        <Icon name="x" class="h-3.5 w-3.5" />Show everyone
+      </button>
     </div>
+
+    <div ref="scroller" class="min-h-0 flex-1 overflow-y-auto" @scroll="onScroll">
+      <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
+        <!-- Empty state -->
+        <div v-if="!timeline.length && !draft" class="flex flex-col items-center py-16 text-center">
+          <JuliMascot state="idle" :size="112" />
+          <h2 class="mt-4 text-lg font-semibold text-white">Ready when you are</h2>
+          <p class="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
+            Describe what to build below. The crew plans it, writes the code, reviews and tests it, and the files land in this project's workspace.
+          </p>
+        </div>
+
+        <section v-for="group in shown" :key="group.run ? group.run.id : 'earlier'" class="mb-10" :aria-label="group.run ? `Run ${group.run.id}` : 'Earlier messages'">
+          <!-- The task, as the user's message -->
+          <div v-if="group.run" class="mb-5 flex flex-col items-end">
+            <div class="max-w-[85%] rounded-2xl rounded-br-md bg-white/[0.07] px-4 py-2.5">
+              <p class="prose-msg text-slate-100">{{ group.run.prompt || '…' }}</p>
+            </div>
+            <p class="mt-1.5 flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-xs text-slate-500">
+              <span>Run {{ group.run.id }}</span>
+              <span v-if="group.run.mode">· {{ modeLabel(group.run.mode) }}</span>
+              <span v-if="group.run.started_at">· {{ formatTime(group.run.started_at) }}</span>
+              <span v-if="group.run.status && group.run.status !== 'running'" class="badge" :class="statusTone(group.run.status)">{{ group.run.status }}</span>
+            </p>
+          </div>
+          <p v-else class="mb-4 text-center text-xs text-slate-500">Earlier messages</p>
+
+          <!-- Whole crew: every entry in order -->
+          <div v-if="!juliView" class="space-y-5">
+            <TimelineItem v-for="m in group.items" :key="m.key" :m="m" v-bind="itemProps" @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
+          </div>
+
+          <!-- Juli only: the crew's work folded away, then one reply -->
+          <div v-else class="space-y-5">
+            <details v-if="group.work.length" class="group rounded-xl border border-juli-border bg-white/[0.02]">
+              <summary class="flex cursor-pointer list-none flex-wrap items-center gap-2 px-4 py-2.5 text-sm text-slate-300">
+                <Icon name="users" class="h-4 w-4 shrink-0 text-slate-400" />
+                <span>Show the crew's work</span>
+                <span class="text-slate-500">· {{ group.work.length }} step{{ group.work.length === 1 ? '' : 's' }} · {{ group.workers }}</span>
+                <Icon name="chevron-down" class="ml-auto h-4 w-4 text-slate-500 transition-transform group-open:rotate-180" />
+              </summary>
+              <div class="space-y-5 border-t border-juli-border px-4 py-4">
+                <TimelineItem v-for="m in group.work" :key="m.key" :m="m" v-bind="itemProps" @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
+              </div>
+            </details>
+
+            <TimelineItem v-for="m in group.before" :key="m.key" :m="m" v-bind="itemProps" as-juli @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
+
+            <!-- The reply: the crew's last message, as Juli, with the whole run's totals -->
+            <article v-if="group.reply" class="flex gap-3">
+              <img src="/mascot/stills/juli-idle.png" alt="" width="32" height="32" class="mt-0.5 h-8 w-8 shrink-0" />
+              <div class="min-w-0 flex-1">
+                <h3 class="mb-1.5 text-sm font-semibold text-juli-accent">Juli</h3>
+                <MessageBody :text="group.reply.content" />
+                <p class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-slate-500">
+                  <span>from {{ agentLabel(group.reply.agent_name, agents) }}</span>
+                  <template v-if="group.total">
+                    <span>run total {{ formatTokens(group.total.tokens_in) }} in · {{ formatTokens(group.total.tokens_out) }} out</span>
+                    <span>{{ formatCost(group.total.cost_usd) }}</span>
+                  </template>
+                  <span>{{ formatTime(group.reply.timestamp) }}</span>
+                </p>
+              </div>
+            </article>
+
+            <TimelineItem v-for="m in group.after" :key="m.key" :m="m" v-bind="itemProps" as-juli @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
+          </div>
+        </section>
+
+        <!-- Text streaming in (the whole-crew view only; in Juli only the line below says who is working) -->
+        <article v-if="!juliView && draft && draft.text && (!filter || filter === draft.agent)" class="mb-6 flex gap-3" aria-busy="true">
+          <AgentOrb :icon="agents[draft.agent]?.icon || 'system'" :color="colorOf(draft.agent)" size="sm" active class="mt-0.5" />
+          <div class="min-w-0 flex-1">
+            <h3 class="mb-1.5 text-sm font-semibold" :style="{ color: colorOf(draft.agent) }">{{ agentLabel(draft.agent, agents) }}</h3>
+            <MessageBody :text="draft.text" />
+          </div>
+        </article>
+
+        <NowWorking v-if="showLine" :status="status" :turn="turn" :asking="asking" :streaming="Boolean(draft && draft.text)" :agents="agents" />
+      </div>
+    </div>
+
+    <button v-if="!atBottom" type="button" class="btn btn-secondary absolute bottom-3 left-1/2 -translate-x-1/2 shadow-lg" @click="scrollToBottom">
+      <Icon name="chevron-down" class="h-4 w-4" />Latest
+    </button>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+// The run view: every run of the project in one timeline, like a chat.
+// "Whole crew" shows each agent's message as it streams in and settles with
+// a footer (model, tokens, cost). "Juli only" folds the crew's work away and
+// shows one reply per run; anything that needs you stays in view.
+import { ref, computed, watch, nextTick } from 'vue'
 import AgentOrb from './AgentOrb.vue'
+import Icon from './Icon.vue'
+import JuliMascot from './JuliMascot.vue'
+import MessageBody from './MessageBody.vue'
+import NowWorking from './NowWorking.vue'
+import TimelineItem from './TimelineItem.vue'
+import { agentLabel, formatCost, formatTime, formatTokens, RUN_MODES } from '../labels.js'
 
 const props = defineProps({
-  messages: { type: Array, default: () => [] },
-  selectedAgent: { type: String, default: null },
-  agents: { type: Array, default: () => [] },
+  timeline: { type: Array, default: () => [] },
+  draft: { type: Object, default: null },
+  status: { type: String, default: 'idle' },
+  turn: { type: Object, default: null },
+  asking: { type: Object, default: null },
+  agents: { type: Object, default: () => ({}) },
+  filter: { type: String, default: null },
+  openDecisionKey: { type: String, default: null },
+  answered: { type: Object, default: () => ({}) },
+  models: { type: Array, default: () => [] },
+  view: { type: String, default: 'crew' }, // crew or juli
+  activeRunId: { type: Number, default: null },
+  totals: { type: Function, default: null }, // run id -> { tokens_in, tokens_out, cost_usd }
 })
-defineEmits(['clearFilter'])
+const emit = defineEmits(['clear-filter', 'answered', 'open-file'])
 
-const scrollContainer = ref(null)
-const scrollAnchor = ref(null)
+// A filter picks one agent's messages, which only makes sense with the whole crew shown.
+const juliView = computed(() => props.view === 'juli' && !props.filter)
+const itemProps = computed(() => ({ agents: props.agents, openDecisionKey: props.openDecisionKey, answered: props.answered, models: props.models }))
+const relayAnswer = (key, action) => emit('answered', key, action)
 
-const agentColor = (n) => {
-  const agent = props.agents.find(a => a.name === n)
-  if (agent) return agent.color
-  if (n === 'System') return '#374151'
-  if (n === 'UserProxy' || n === 'You') return '#6b7280'
-  return '#6b7280'
-}
+// The crew's working steps, plus questions already answered; everything else
+// (your notes, an open question, warnings, errors, follow-ups) stays in view.
+const CREW_WORK = new Set(['agent', 'files', 'command', 'system'])
+const isWork = m => CREW_WORK.has(m.message_type) || (m.message_type === 'decision' && m.key !== props.openDecisionKey)
+const live = computed(() => props.status === 'running' || props.status === 'paused')
 
-const agentIcon = (n) => {
-  if (n === 'System') return 'system'
-  if (n === 'UserProxy' || n === 'You') return 'user'
-  const agent = props.agents.find(a => a.name === n)
-  return agent ? agent.icon : 'system'
-}
-
-const agentDisplayName = (n) => {
-  if (n === 'System') return 'System'
-  if (n === 'UserProxy') return 'You'
-  if (n === 'error') return 'Error'
-  const agent = props.agents.find(a => a.name === n)
-  if (agent && agent.job_title) return agent.job_title
-  return n.replace(/([A-Z])/g, ' $1').trim()
-}
-
-function formatTime(ts) {
-  if (!ts) return ''
-  try { return new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) }
-  catch { return '' }
-}
-
-const hasCodeBlock = (c) => c?.includes('```')
-
-function parseContent(content) {
-  const blocks = []
-  for (const part of content.split(/(```[\s\S]*?```)/g)) {
-    if (part.startsWith('```')) {
-      const m = part.match(/```(\w+)?\n?([\s\S]*?)```/)
-      if (m) blocks.push({ type: 'code', lang: m[1] || '', code: m[2].trim() })
-    } else if (part.trim()) {
-      blocks.push({ type: 'text', text: part })
+function foldForJuli(group) {
+  const items = group.items
+  // A finished run's reply is its last agent message; a live run has none yet.
+  const running = live.value && group.run && group.run.id === props.activeRunId
+  let replyAt = -1
+  if (!running) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].message_type === 'agent') { replyAt = i; break }
     }
   }
-  return blocks
+  const work = items.filter((m, i) => isWork(m) && i !== replyAt)
+  const visible = (m, i) => !isWork(m) && i !== replyAt
+  const workers = [...new Set(work.filter(m => m.message_type === 'agent').map(m => agentLabel(m.agent_name, props.agents)))].join(', ')
+  return {
+    ...group,
+    work,
+    workers,
+    before: items.filter((m, i) => visible(m, i) && (replyAt < 0 || i < replyAt)),
+    reply: replyAt >= 0 ? items[replyAt] : null,
+    after: replyAt >= 0 ? items.filter((m, i) => visible(m, i) && i > replyAt) : [],
+    total: replyAt >= 0 && group.run && props.totals ? props.totals(group.run.id) : null,
+  }
 }
 
-const copyCode = (code) => navigator.clipboard.writeText(code).catch(() => {})
+const shown = computed(() => {
+  if (props.filter) return props.timeline.map(g => ({ ...g, items: g.items.filter(m => m.agent_name === props.filter) }))
+  return juliView.value ? props.timeline.map(foldForJuli) : props.timeline
+})
+
+// The live line shows while the crew works or waits, and after a run ends (until the next one).
+const showLine = computed(() => Boolean(props.asking) || (props.status !== 'idle' && props.timeline.some(g => g.run)))
+
+const colorOf = name => props.agents[name]?.color || '#94a3b8'
+const modeLabel = id => RUN_MODES.find(m => m.id === id)?.label || id
+
+function statusTone(status) {
+  return {
+    complete: 'bg-emerald-500/15 text-emerald-300',
+    stopped: 'bg-slate-500/20 text-slate-300',
+    error: 'bg-red-500/15 text-red-300',
+    paused: 'bg-amber-500/15 text-amber-200',
+  }[status] || 'bg-slate-500/20 text-slate-300'
+}
+
+// Follow the newest text unless the user has scrolled up to read.
+const scroller = ref(null)
+const atBottom = ref(true)
+
+function onScroll() {
+  const el = scroller.value
+  atBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+}
 
 function scrollToBottom() {
-  nextTick(() => scrollAnchor.value?.scrollIntoView({ behavior: 'smooth' }))
+  const el = scroller.value
+  if (el) el.scrollTop = el.scrollHeight
+  atBottom.value = true
 }
 
-watch(() => props.messages.length, scrollToBottom)
+watch(
+  () => [props.timeline.reduce((n, g) => n + g.items.length, 0), props.draft?.text.length, props.status, props.turn, props.view],
+  () => { if (atBottom.value) nextTick(scrollToBottom) },
+)
 </script>

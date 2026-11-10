@@ -1,7 +1,8 @@
 """
 JULI: FastAPI app factory.
 
-Run with `uvicorn --factory juli.api.app:create_app`. Every /api route except
+Run with `uvicorn --factory juli.api.app:create_app`, or `juli serve`, which
+also serves the built dashboard on the same origin. Every /api route except
 GET /api/health needs `Authorization: Bearer <token>`. The WebSockets at /ws
 (live agent messages) and /ws/terminal (the IDE terminal) need an allowed
 Origin and the token in their first message.
@@ -11,8 +12,11 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from juli import __version__, config, store
 from juli.api import local, projects, providers, security, settings, tasks, workspace
@@ -92,7 +96,9 @@ async def lifespan(app: FastAPI):
     message_bus.set_persister(None)
 
 
-def create_app(token: str | None = None) -> FastAPI:
+def create_app(token: str | None = None, static_dir: Path | None = None, port: int = 8000) -> FastAPI:
+    """The app. With static_dir (the built dashboard, frontend/dist), it also
+    serves the dashboard at / on `port`, so browser and API share one origin."""
     token = token or os.environ.get("JULI_TOKEN")
     if not token:
         # Never generate-and-print: the token would end up in terminal logs.
@@ -140,6 +146,8 @@ def create_app(token: str | None = None) -> FastAPI:
                 agent_name="System",
                 content=f"Connected to JULI — Status: {message_bus.task_status}",
                 message_type="status",
+                data={"status": message_bus.task_status},
+                run_id=message_bus.active_run_id,
             ).to_dict()
         )
         for msg in message_bus.history:
@@ -160,4 +168,23 @@ def create_app(token: str | None = None) -> FastAPI:
         if hello is not None:
             await workspace.terminal_socket(websocket, hello)
 
+    if static_dir is not None:
+        serve_dashboard(app, static_dir, port)
     return app
+
+
+def serve_dashboard(app: FastAPI, static_dir: Path, port: int) -> None:
+    """The built dashboard: index.html at /, hashed bundles at /assets, the mascot at /mascot."""
+    index, assets = static_dir / "index.html", static_dir / "assets"
+    missing = [str(p) for p, ok in ((index, index.is_file()), (assets, assets.is_dir())) if not ok]
+    if missing:
+        raise RuntimeError(f"The dashboard isn't built: {' and '.join(missing)} missing. Run `npm run build` in frontend/.")
+    app.state.ui_csp = security.ui_csp(port)
+    app.mount("/assets", StaticFiles(directory=assets), name="assets")
+    if (static_dir / "mascot").is_dir():
+        app.mount("/mascot", StaticFiles(directory=static_dir / "mascot"), name="mascot")
+
+    @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
+    def dashboard() -> FileResponse:
+        # Always revalidate the page; the bundles it names are content-hashed.
+        return FileResponse(index, headers={"Cache-Control": "no-cache"})

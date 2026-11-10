@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <title>Juli Mascot — planner</title>
+  <g id="layer-shadow">
+    <ellipse cx="128" cy="230" rx="44" ry="9" fill="#06b6d4" fill-opacity="0.18"/>
+  </g>
+  <g id="layer-legs" stroke="#1a1625" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="106" y="196" width="16" height="30" rx="7" fill="#334155"/>
+    <rect x="134" y="196" width="16" height="30" rx="7" fill="#334155"/>
+  </g>
+  <g id="layer-torso-jacket" stroke="#1a1625" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="98" y="132" width="60" height="68" rx="16" fill="#1e293b"/>
+    <path d="M114 133 L94 138 Q86 170 92 202 L116 202 Z" fill="#f1f5f9"/>
+    <path d="M142 133 L162 138 Q170 170 164 202 L140 202 Z" fill="#f1f5f9"/>
+    <polygon points="114,133 100,154 113,162" fill="#cbd5e1"/>
+    <polygon points="142,133 156,154 143,162" fill="#cbd5e1"/>
+  </g>
+  <g id="layer-lanyard-badge">
+    <polyline points="118,136 128,172 138,136" fill="none" stroke="#6366f1" stroke-width="4.5" stroke-linecap="round"/>
+    <rect x="118" y="170" width="20" height="25" rx="4" fill="#ffffff" stroke="#1a1625" stroke-width="4.5"/>
+    <rect x="122" y="175" width="12" height="6" rx="2" fill="#6366f1"/>
+  </g>
+  <g id="layer-head-hair-glasses" stroke="#1a1625" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="102" cy="52" r="24" fill="#3d2722"/>
+    <path d="M90 58 A16 16 0 0 1 116 64" fill="none" stroke="#6366f1" stroke-width="5"/>
+    <path d="M84 80 C80 40 176 40 172 80 C178 114 162 130 128 130 C94 130 78 114 84 80 Z" fill="#fcd5b8"/>
+    <ellipse cx="100" cy="110" rx="8.5" ry="4.8" fill="#eeb492" stroke="none"/>
+    <ellipse cx="156" cy="110" rx="8.5" ry="4.8" fill="#eeb492" stroke="none"/>
+    <ellipse cx="109" cy="94" rx="5.5" ry="7" fill="#1a1625" stroke="none"/>
+    <ellipse cx="147" cy="94" rx="5.5" ry="7" fill="#1a1625" stroke="none"/>
+    <circle cx="107" cy="91" r="2.2" fill="#ffffff" stroke="none"/>
+    <circle cx="145" cy="91" r="2.2" fill="#ffffff" stroke="none"/>
+    <circle cx="109" cy="94" r="16" fill="#06b6d4" fill-opacity="0.1" stroke="#1e293b" stroke-width="5.5"/>
+    <circle cx="147" cy="94" r="16" fill="#06b6d4" fill-opacity="0.1" stroke="#1e293b" stroke-width="5.5"/>
+    <path d="M125 93 Q128 89 131 93" fill="none" stroke="#1e293b" stroke-width="5.5"/>
+    <path d="M123 113 Q128 110 130 114 Q134 111 135 116" fill="none" stroke="#1a1625" stroke-width="4.2"/>
+    <path d="M84 80 C82 40 174 40 172 80 Q150 64 128 74 Q106 62 84 80 Z" fill="#3d2722"/>
+    <path d="M84 78 C72 102 80 124 92 140 C98 128 90 104 92 82 Z" fill="#3d2722"/>
+    <path d="M172 78 C184 102 176 124 164 140 C158 128 166 104 164 82 Z" fill="#3d2722"/>
+  </g>
+</svg>

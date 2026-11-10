@@ -6,13 +6,15 @@ const AUTH_FAILED = 4401
 const BAD_ORIGIN = 4403
 
 /**
- * WebSocket composable for real-time agent message streaming.
- * Connects on the page's own origin (the Vite proxy in dev), authenticates
- * with the session token as its first message, and auto-reconnects with
- * exponential backoff unless the server refused the session.
+ * The live agent message stream at /ws.
+ * Connects on the page's own origin (the Vite proxy in dev, FastAPI in
+ * production), authenticates with the session token as its first message,
+ * hands every message to `onMessage`, and reconnects with exponential
+ * backoff unless the server refused the session. On every (re)connect the
+ * server replays the current run's live view, so `onMessage` must tolerate
+ * messages it has seen before.
  */
-export function useWebSocket(url = null) {
-  const messages = ref([])
+export function useWebSocket(onMessage) {
   const isConnected = ref(false)
   const status = ref('disconnected') // disconnected, connecting, connected, unauthorized
   let ws = null
@@ -20,7 +22,7 @@ export function useWebSocket(url = null) {
   let reconnectDelay = 1000
 
   const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
-  const wsUrl = url || `${scheme}://${window.location.host}/ws`
+  const wsUrl = `${scheme}://${window.location.host}/ws`
 
   function connect() {
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
@@ -43,27 +45,21 @@ export function useWebSocket(url = null) {
 
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'auth', token: getToken() }))
-      isConnected.value = true
-      status.value = 'connected'
     }
 
     ws.onmessage = (event) => {
-      reconnectDelay = 1000 // The server accepted our auth: reset backoff
+      // The server accepted our auth: we're connected, and backoff resets.
+      reconnectDelay = 1000
+      isConnected.value = true
+      status.value = 'connected'
+      let data
       try {
-        const data = JSON.parse(event.data)
-        // Streamed chunks are followed by the agent's full message, and
-        // turn_start drives the "now working" line; both are shown by the
-        // dashboard rework, so skip them here.
-        if (data.message_type === 'chunk' || data.message_type === 'turn_start') return
-        messages.value.push({
-          agent_name: data.agent_name || 'Unknown',
-          content: data.content || '',
-          timestamp: data.timestamp || new Date().toISOString(),
-          message_type: data.message_type || 'agent',
-        })
+        data = JSON.parse(event.data)
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e)
+        return
       }
+      onMessage(data)
     }
 
     ws.onclose = (event) => {
@@ -101,24 +97,8 @@ export function useWebSocket(url = null) {
     }
   }
 
-  function clearMessages() {
-    messages.value = []
-  }
+  onMounted(connect)
+  onUnmounted(disconnect)
 
-  onMounted(() => {
-    connect()
-  })
-
-  onUnmounted(() => {
-    disconnect()
-  })
-
-  return {
-    messages,
-    isConnected,
-    status,
-    connect,
-    disconnect,
-    clearMessages,
-  }
+  return { isConnected, status, connect, disconnect }
 }

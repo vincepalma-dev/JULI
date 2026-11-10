@@ -164,6 +164,8 @@ def get_status() -> TaskStatusResponse:
         status=message_bus.task_status,
         current_task=message_bus.current_task,
         message_count=len(message_bus.history),
+        project_id=message_bus.active_project_id,
+        run_id=message_bus.active_run_id,
     )
 
 

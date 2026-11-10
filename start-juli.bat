@@ -1,16 +1,15 @@
 @echo off
-title JULI Dashboard
+title JULI
 echo.
 echo   J.U.L.I.
 echo   Jolly Universe of Little Intelligences
 echo   -------------------------------------
 echo.
 
-:: Activate virtual environment and run
 cd /d "%~dp0"
-call .venv\Scripts\activate.bat
 
-:: Starts backend + dashboard and opens the browser with a session token
-python run.py
+:: Serves the dashboard and the API on http://127.0.0.1:8000 (building the
+:: dashboard first if needed) and opens it with a fresh session token.
+.venv\Scripts\python -m juli serve
 
 pause

@@ -6,6 +6,7 @@ starts. Deleting a project cascades to its runs and messages. A running run
 keeps a checkpoint (JSON) in its row, so it can resume after a restart.
 """
 
+import json
 import sqlite3
 import uuid
 from collections.abc import Iterator
@@ -39,6 +40,7 @@ _MESSAGE_COLUMNS = {
     "tokens_in": "INTEGER",
     "tokens_out": "INTEGER",
     "cost_usd": "REAL",
+    "data": "TEXT",  # JSON: a decision's options, a command's result, ...
 }
 
 # Columns added to `runs` after the first schema.
@@ -146,6 +148,14 @@ def project_exists(project_id: str) -> bool:
         return conn.execute("SELECT 1 FROM projects WHERE id = ?", (project_id,)).fetchone() is not None
 
 
+def _load_data(raw: str | None) -> dict | None:
+    try:
+        data = json.loads(raw) if raw else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def get_project(project_id: str) -> dict | None:
     """Project metadata with its full message history across all runs."""
     with connect() as conn:
@@ -154,11 +164,11 @@ def get_project(project_id: str) -> dict | None:
             return None
         project = dict(row)
         msg_rows = conn.execute(
-            "SELECT agent_name, content, timestamp, message_type, model, tokens_in, tokens_out, cost_usd "
+            "SELECT run_id, agent_name, content, timestamp, message_type, model, tokens_in, tokens_out, cost_usd, data "
             "FROM messages WHERE project_id = ? ORDER BY id ASC",
             (project_id,),
         ).fetchall()
-        project["messages"] = [dict(mr) for mr in msg_rows]
+        project["messages"] = [{**dict(mr), "data": _load_data(mr["data"])} for mr in msg_rows]
         return project
 
 
@@ -281,7 +291,7 @@ def save_message(project_id: str, run_id: int | None, message: dict) -> None:
     with connect() as conn:
         conn.execute(
             "INSERT INTO messages (project_id, run_id, agent_name, content, timestamp, message_type, "
-            "model, tokens_in, tokens_out, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "model, tokens_in, tokens_out, cost_usd, data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 project_id,
                 run_id,
@@ -293,6 +303,7 @@ def save_message(project_id: str, run_id: int | None, message: dict) -> None:
                 message.get("tokens_in"),
                 message.get("tokens_out"),
                 message.get("cost_usd"),
+                json.dumps(message["data"]) if message.get("data") is not None else None,
             ),
         )
         conn.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))

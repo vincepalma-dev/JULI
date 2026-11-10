@@ -183,12 +183,15 @@ class AgentMessageResponse(BaseModel):
     tokens_out: int | None = None
     cost_usd: float | None = None
     data: dict | None = None
+    run_id: int | None = None
 
 
 class TaskStatusResponse(BaseModel):
     status: TaskStatusEnum = TaskStatusEnum.IDLE
     current_task: str | None = None
     message_count: int = 0
+    project_id: str | None = None
+    run_id: int | None = None
 
 
 class AgentInfo(BaseModel):

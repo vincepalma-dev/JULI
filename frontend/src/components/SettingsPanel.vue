@@ -1,555 +1,297 @@
 <template>
-  <transition name="slide-panel">
-    <div v-if="open" class="fixed inset-0 z-50 flex justify-end" @click.self="$emit('close')">
-      <!-- Backdrop -->
-      <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="$emit('close')"></div>
+  <SidePanel :open="open" title="Settings" icon="sliders" @close="$emit('close')">
+    <template #tabs>
+      <div class="tab-bar" role="tablist" aria-label="Settings sections">
+        <button v-for="t in TABS" :key="t.id" type="button" role="tab" class="tab" :aria-selected="tab === t.id" @click="tab = t.id">{{ t.label }}</button>
+      </div>
+    </template>
 
-      <!-- Panel -->
-      <div class="relative w-full max-w-lg glass flex flex-col h-full shadow-glass-lg animate-slide-in" style="border-left: 1px solid rgba(6,182,212,0.12);">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-5 py-4 glow-line">
-          <div class="flex items-center gap-2.5">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5 text-juli-accent">
-              <path fill-rule="evenodd" d="M8.34 1.804A1 1 0 0 1 9.32 1h1.36a1 1 0 0 1 .98.804l.295 1.473c.497.144.971.342 1.416.587l1.25-.834a1 1 0 0 1 1.262.125l.962.962a1 1 0 0 1 .125 1.262l-.834 1.25c.245.445.443.919.587 1.416l1.473.295a1 1 0 0 1 .804.98v1.361a1 1 0 0 1-.804.98l-1.473.295a6.95 6.95 0 0 1-.587 1.416l.834 1.25a1 1 0 0 1-.125 1.262l-.962.962a1 1 0 0 1-1.262.125l-1.25-.834a6.953 6.953 0 0 1-1.416.587l-.295 1.473a1 1 0 0 1-.98.804H9.32a1 1 0 0 1-.98-.804l-.295-1.473a6.957 6.957 0 0 1-1.416-.587l-1.25.834a1 1 0 0 1-1.262-.125l-.962-.962a1 1 0 0 1-.125-1.262l.834-1.25a6.957 6.957 0 0 1-.587-1.416l-1.473-.295A1 1 0 0 1 1 10.68V9.32a1 1 0 0 1 .804-.98l1.473-.295c.144-.497.342-.971.587-1.416l-.834-1.25a1 1 0 0 1 .125-1.262l.962-.962A1 1 0 0 1 5.38 3.03l1.25.834a6.957 6.957 0 0 1 1.416-.587l.294-1.473ZM13 10a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" clip-rule="evenodd" />
-            </svg>
-            <h2 class="text-sm font-bold text-white tracking-wide">Settings</h2>
-          </div>
-          <button @click="$emit('close')" class="text-juli-muted hover:text-white transition-colors p-1 rounded-lg hover:bg-white/5">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-              <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-            </svg>
-          </button>
+    <!-- Run limits -->
+    <form v-if="tab === 'run'" class="space-y-5" @submit.prevent="saveRun">
+      <p class="hint">Limits are off unless you set them. When a limit is reached, the run stops and keeps its output so far.</p>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="budget" class="label">Budget cap per run (US$)</label>
+          <input id="budget" v-model="run.budget_usd" type="number" min="0.01" max="10000" step="0.01" inputmode="decimal" class="field" placeholder="No limit" />
+          <p class="hint mt-1">Cloud cost only; local models count as $0.</p>
         </div>
-
-        <!-- Tabs -->
-        <div class="flex px-5 gap-1 border-b border-juli-border/50">
-          <button
-            v-for="tab in tabs" :key="tab.id"
-            @click="activeTab = tab.id"
-            class="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider transition-all relative"
-            :class="activeTab === tab.id ? 'text-juli-accent' : 'text-juli-muted hover:text-juli-text'"
-          >
-            {{ tab.label }}
-            <div v-if="activeTab === tab.id" class="absolute bottom-0 left-0 right-0 h-0.5 bg-juli-accent rounded-full"></div>
-          </button>
-        </div>
-
-        <!-- Tab Content -->
-        <div class="flex-1 overflow-y-auto px-5 py-4">
-
-          <!-- AGENTS TAB -->
-          <div v-if="activeTab === 'agents'" class="space-y-3">
-            <div
-              v-for="(config, name) in settings.agents" :key="name"
-              class="glass-card rounded-xl p-4 space-y-3"
-            >
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <AgentOrb :icon="config.icon || 'system'" :color="config.color || '#6b7280'" size="sm" />
-                  <input
-                    :value="config.job_title !== undefined && config.job_title !== '' ? config.job_title : formatName(name)"
-                    @input="updateAgentField(name, 'job_title', $event.target.value)"
-                    class="text-sm font-bold text-white bg-transparent outline-none border-b border-transparent focus:border-juli-accent/60 hover:bg-white/5 transition-all w-48 placeholder-white/30 px-1 py-0.5 -ml-1 rounded"
-                    :placeholder="formatName(name)"
-                  />
-                </div>
-                <button
-                  @click="removeAgent(name)"
-                  class="text-juli-muted hover:text-red-400 transition-colors p-1 rounded"
-                  title="Remove agent"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
-                    <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 1 0 .23 1.482l.149-.022.841 10.518A2.75 2.75 0 0 0 7.596 19h4.807a2.75 2.75 0 0 0 2.742-2.53l.841-10.52.149.023a.75.75 0 0 0 .23-1.482A41.03 41.03 0 0 0 14 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4ZM8.58 7.72a.75.75 0 0 0-1.5.06l.3 7.5a.75.75 0 1 0 1.5-.06l-.3-7.5Zm4.34.06a.75.75 0 1 0-1.5-.06l-.3 7.5a.75.75 0 1 0 1.5.06l.3-7.5Z" clip-rule="evenodd" />
-                  </svg>
-                </button>
-              </div>
-
-              <!-- Model selector -->
-              <div class="space-y-2 mt-2">
-                <div>
-                  <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Model</label>
-                <select
-                  :value="config.model"
-                  @change="updateAgentField(name, 'model', $event.target.value)"
-                  class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 bg-juli-bg"
-                >
-                  <option v-for="m in settings.available_models" :key="m" :value="m">{{ modelLabel(m) }}</option>
-                </select>
-              </div>
-              </div>
-
-              <!-- Icon selector -->
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Icon</label>
-                <div class="flex gap-1.5 flex-wrap">
-                  <button
-                    v-for="ic in iconOptions" :key="ic.id"
-                    @click="updateAgentField(name, 'icon', ic.id)"
-                    class="w-8 h-8 rounded-lg flex items-center justify-center transition-all"
-                    :class="config.icon === ic.id ? 'bg-juli-accent/20 border border-juli-accent/40' : 'bg-white/5 border border-transparent hover:border-juli-border'"
-                    :title="ic.label"
-                  >
-                    <AgentOrb :icon="ic.id" :color="config.icon === ic.id ? config.color : '#64748b'" size="sm" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Color -->
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Color</label>
-                <div class="flex gap-1.5">
-                  <button
-                    v-for="c in colorOptions" :key="c"
-                    @click="updateAgentField(name, 'color', c)"
-                    class="w-6 h-6 rounded-full transition-all border-2"
-                    :style="{ backgroundColor: c, borderColor: config.color === c ? 'white' : 'transparent' }"
-                  ></button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Add New Agent -->
-            <button @click="showAddAgent = true" class="w-full glass-card rounded-xl p-3 flex items-center justify-center gap-2 text-juli-accent hover:text-white transition-colors group">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-                <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-              </svg>
-              <span class="text-xs font-semibold">Add New Job</span>
-            </button>
-
-            <!-- Add Agent Form -->
-            <div v-if="showAddAgent" class="glass-card rounded-xl p-4 space-y-3">
-              <h3 class="text-xs font-bold text-white">New Agent Job</h3>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Name</label>
-                <input v-model="newAgent.name" placeholder="e.g. DatabaseArchitect" class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200" />
-              </div>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Job Title</label>
-                <input v-model="newAgent.job_title" placeholder="e.g. Lead DB Admin" class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200" />
-              </div>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Model</label>
-                <select v-model="newAgent.model" class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 bg-juli-bg">
-                  <option v-for="m in settings.available_models" :key="m" :value="m">{{ modelLabel(m) }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">System Prompt</label>
-                <textarea v-model="newAgent.prompt" rows="3" placeholder="Describe what this agent does..." class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 resize-none"></textarea>
-              </div>
-              <div class="flex gap-2">
-                <button @click="addAgent" class="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg flex-1">Create Agent</button>
-                <button @click="showAddAgent = false" class="text-xs text-juli-muted hover:text-white px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- PROMPTS TAB -->
-          <div v-if="activeTab === 'prompts'" class="space-y-3">
-            <div v-for="(config, name) in settings.agents" :key="name" class="glass-card rounded-xl p-4 space-y-2">
-              <div class="flex items-center gap-2">
-                <AgentOrb :icon="config.icon || 'system'" :color="config.color || '#6b7280'" size="sm" />
-                <span class="text-xs font-bold text-white">{{ formatName(name) }}</span>
-              </div>
-              <textarea
-                :value="config.prompt"
-                @change="updateAgentField(name, 'prompt', $event.target.value)"
-                rows="4"
-                class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-300 resize-none leading-relaxed font-mono"
-                placeholder="System prompt for this agent..."
-              ></textarea>
-            </div>
-          </div>
-
-          <!-- API KEYS TAB -->
-          <div v-if="activeTab === 'keys'" class="space-y-4">
-            <p class="text-[11px] text-juli-muted leading-relaxed">Configure your LLM API keys. Add any AI provider you need.</p>
-
-            <div v-for="(hint, provider) in settings.key_hints" :key="provider" class="glass-card rounded-xl p-4 space-y-2">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <div class="w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold" :style="{ backgroundColor: (providerColors[provider] || '#6b7280') + '20', color: providerColors[provider] || '#6b7280' }">
-                    {{ (providerLabels[provider] || provider)[0].toUpperCase() }}
-                  </div>
-                  <span class="text-xs font-bold text-white">{{ providerLabels[provider] || provider }}</span>
-                </div>
-                <button
-                  @click="removeProvider(provider)"
-                  class="text-juli-muted hover:text-red-400 transition-colors p-1 rounded"
-                  title="Remove provider"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3 h-3">
-                    <path d="M6.28 5.22a.75.75 0 0 0-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 1 0 1.06 1.06L10 11.06l3.72 3.72a.75.75 0 1 0 1.06-1.06L11.06 10l3.72-3.72a.75.75 0 0 0-1.06-1.06L10 8.94 6.28 5.22Z" />
-                  </svg>
-                </button>
-              </div>
-              <div class="relative">
-                <input
-                  :type="showKey[provider] ? 'text' : 'password'"
-                  :value="apiKeys[provider] ?? ''"
-                  @input="apiKeys[provider] = $event.target.value"
-                  :placeholder="hint ? 'Saved ' + hint + ' (type to replace)' : 'Enter ' + (providerLabels[provider] || provider) + ' API key...'"
-                  autocomplete="off"
-                  class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 pr-8 font-mono"
-                />
-                <button @click="showKey[provider] = !showKey[provider]" class="absolute right-2.5 top-1/2 -translate-y-1/2 text-juli-muted hover:text-white transition-colors">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-3.5 h-3.5">
-                    <path v-if="showKey[provider]" d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" />
-                    <path v-if="showKey[provider]" fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.186A10.004 10.004 0 0 1 10 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0 1 10 17c-4.257 0-7.893-2.66-9.336-6.41ZM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" clip-rule="evenodd" />
-                    <path v-if="!showKey[provider]" fill-rule="evenodd" d="M3.28 2.22a.75.75 0 0 0-1.06 1.06l14.5 14.5a.75.75 0 1 0 1.06-1.06l-1.745-1.745a10.029 10.029 0 0 0 3.3-4.38 1.651 1.651 0 0 0 0-1.185A10.004 10.004 0 0 0 9.999 3a9.956 9.956 0 0 0-4.744 1.194L3.28 2.22ZM7.752 6.69l1.092 1.092a2.5 2.5 0 0 1 3.374 3.373l1.092 1.092a4 4 0 0 0-5.558-5.558Z" clip-rule="evenodd" />
-                    <path v-if="!showKey[provider]" d="M10.748 13.93l2.523 2.523A9.987 9.987 0 0 1 10 17a10.003 10.003 0 0 1-9.335-6.41 1.651 1.651 0 0 1 0-1.186 10.018 10.018 0 0 1 2.862-4.156l1.912 1.912A4 4 0 0 0 10.748 13.93Z" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <!-- Add Provider -->
-            <div v-if="!showAddProvider" class="flex gap-2">
-              <button @click="showAddProvider = true" class="flex-1 glass-card rounded-xl p-3 flex items-center justify-center gap-2 text-juli-accent hover:text-white transition-colors">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-4 h-4">
-                  <path d="M10.75 4.75a.75.75 0 0 0-1.5 0v4.5h-4.5a.75.75 0 0 0 0 1.5h4.5v4.5a.75.75 0 0 0 1.5 0v-4.5h4.5a.75.75 0 0 0 0-1.5h-4.5v-4.5Z" />
-                </svg>
-                <span class="text-xs font-semibold">Add Provider</span>
-              </button>
-              <button @click="saveApiKeys" class="btn-glow text-white text-xs font-semibold px-5 py-2.5 rounded-xl">
-                Save Keys
-              </button>
-            </div>
-
-            <!-- Add Provider Form -->
-            <div v-if="showAddProvider" class="glass-card rounded-xl p-4 space-y-3">
-              <h3 class="text-xs font-bold text-white">New AI Provider</h3>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">Provider Name</label>
-                <input v-model="newProviderName" placeholder="e.g. Mistral, Cohere, DeepSeek..." class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200" />
-              </div>
-              <div>
-                <label class="text-[10px] text-juli-muted uppercase tracking-wider font-semibold block mb-1">API Key</label>
-                <input v-model="newProviderKey" type="password" placeholder="Enter API key..." class="w-full glass-input rounded-lg px-3 py-2 text-xs text-gray-200 font-mono" />
-              </div>
-              <div class="flex gap-2">
-                <button @click="addProvider" class="btn-glow text-white text-xs font-semibold px-4 py-2 rounded-lg flex-1">Add Provider</button>
-                <button @click="showAddProvider = false" class="text-xs text-juli-muted hover:text-white px-3 py-2 rounded-lg hover:bg-white/5 transition-colors">Cancel</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- THEMES TAB -->
-          <div v-if="activeTab === 'themes'" class="space-y-3">
-            <p class="text-[11px] text-juli-muted leading-relaxed">Choose a theme for your dashboard. Inspired by GitHub Pages themes.</p>
-
-            <div
-              v-for="theme in themePresets" :key="theme.id"
-              @click="applyTheme(theme)"
-              class="glass-card rounded-xl p-4 flex items-center gap-4 cursor-pointer transition-all duration-200 hover:scale-[1.01]"
-              :class="activeTheme === theme.id ? 'ring-1 ring-offset-0' : ''"
-              :style="activeTheme === theme.id ? { borderColor: theme.accent + '60', ringColor: theme.accent + '40' } : {}"
-            >
-              <!-- Color preview -->
-              <div class="w-12 h-12 rounded-lg shrink-0 overflow-hidden relative" :style="{ backgroundColor: theme.bg }">
-                <div class="absolute inset-x-0 top-0 h-3" :style="{ backgroundColor: theme.panel }"></div>
-                <div class="absolute left-1 top-4 w-2 h-6 rounded-sm" :style="{ backgroundColor: theme.border }"></div>
-                <div class="absolute right-2 top-5 w-4 h-1 rounded-full" :style="{ backgroundColor: theme.accent }"></div>
-                <div class="absolute right-2 top-7 w-3 h-1 rounded-full" :style="{ backgroundColor: theme.text + '60' }"></div>
-                <div class="absolute right-2 top-9 w-5 h-1 rounded-full" :style="{ backgroundColor: theme.text + '30' }"></div>
-              </div>
-
-              <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-2">
-                  <span class="text-sm font-bold text-white">{{ theme.name }}</span>
-                  <div v-if="activeTheme === theme.id" class="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" :style="{ backgroundColor: theme.accent + '20', color: theme.accent }">Active</div>
-                </div>
-                <p class="text-[11px] mt-0.5" :style="{ color: theme.text }">{{ theme.desc }}</p>
-              </div>
-
-              <!-- Accent dot -->
-              <div class="w-4 h-4 rounded-full shrink-0" :style="{ backgroundColor: theme.accent }"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Save indicator -->
-        <div v-if="saveMessage" class="px-5 py-2 text-center">
-          <span class="text-[11px] font-medium" :class="saveMessage.includes('Error') ? 'text-red-400' : 'text-emerald-400'">{{ saveMessage }}</span>
+        <div>
+          <label for="tokencap" class="label">Token cap per run</label>
+          <input id="tokencap" v-model="run.token_cap" type="number" min="1" max="100000000" step="1" inputmode="numeric" class="field" placeholder="No limit" />
+          <p class="hint mt-1">Input plus output tokens, every agent, local and cloud.</p>
         </div>
       </div>
+
+      <div>
+        <label for="discuss" class="label">Crew discussion of the plan</label>
+        <select id="discuss" v-model.number="run.discussion_rounds" class="field sm:w-60">
+          <option :value="0">Off</option>
+          <option v-for="n in 4" :key="n" :value="n">Up to {{ n }} round{{ n > 1 ? 's' : '' }}</option>
+        </select>
+        <p class="hint mt-1">Before coding, the Coder and Reviewer give feedback on the plan and the Planner revises it. Each round adds turns, so it uses more tokens.</p>
+      </div>
+
+      <fieldset class="surface space-y-3 p-4">
+        <legend class="px-1 text-xs font-medium text-slate-300">When a cloud key fails</legend>
+        <label class="flex cursor-pointer items-start gap-2 text-sm text-slate-200">
+          <input v-model="run.auto_fallback" type="checkbox" class="mt-0.5 h-4 w-4 accent-cyan-500" />
+          <span>Switch to a local model automatically instead of pausing (out of credit or invalid key).</span>
+        </label>
+        <div>
+          <label for="fallback" class="label">Local fallback model</label>
+          <input id="fallback" v-model="run.fallback_model" list="local-models" class="field font-mono" placeholder="ollama:qwen3:8b" spellcheck="false" autocomplete="off" />
+          <datalist id="local-models"><option v-for="m in localModels" :key="m" :value="m" /></datalist>
+        </div>
+      </fieldset>
+
+      <div class="flex items-center gap-3">
+        <button type="submit" class="btn btn-primary" :disabled="busy">Save limits</button>
+        <p v-if="notice.run" class="text-sm" :class="notice.run.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.run.text }}</p>
+      </div>
+    </form>
+
+    <!-- API keys -->
+    <form v-else-if="tab === 'keys'" class="space-y-4" @submit.prevent="saveKeys">
+      <p class="hint">Keys are stored in your system keychain, never in settings files or logs. The monthly allowance is tracked on this machine: JULI warns at 80% and blocks new runs at 100% (you can override it per run).</p>
+      <div v-for="p in keyProviders" :key="p.id" class="surface space-y-3 p-4">
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="text-sm font-semibold text-white">{{ p.label }}</h3>
+          <span v-if="p.key_hint" class="font-mono text-xs text-slate-400">{{ p.key_hint }}</span>
+          <span class="badge" :class="health(p).tone" :title="health(p).detail">{{ health(p).label }}</span>
+          <span class="ml-auto flex gap-1">
+            <button type="button" class="btn btn-secondary !min-h-0 !px-2.5 !py-1 text-xs" :disabled="!p.key_hint || checking[p.id]" @click="check(p.id)">{{ checking[p.id] ? 'Checking…' : 'Check' }}</button>
+            <button v-if="p.key_hint" type="button" class="icon-btn !h-8 !w-8 hover:!text-red-300" :aria-label="`Remove the ${p.label} key`" @click="removeKey(p.id)"><Icon name="trash" class="h-4 w-4" /></button>
+          </span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-[1fr_9rem]">
+          <div>
+            <label :for="`key-${p.id}`" class="label">{{ p.key_hint ? 'Replace key' : 'API key' }}</label>
+            <div class="relative">
+              <input :id="`key-${p.id}`" v-model="keys[p.id]" :type="show[p.id] ? 'text' : 'password'" maxlength="500" class="field pr-10 font-mono" autocomplete="off" spellcheck="false" :placeholder="p.key_hint ? 'Saved' : 'Paste a key…'" />
+              <button type="button" class="icon-btn absolute right-0.5 top-1/2 !h-8 !w-8 -translate-y-1/2" :aria-label="show[p.id] ? 'Hide key' : 'Show key'" @click="show[p.id] = !show[p.id]">
+                <Icon :name="show[p.id] ? 'eye-off' : 'eye'" class="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div>
+            <label :for="`allow-${p.id}`" class="label">Monthly allowance ($)</label>
+            <input :id="`allow-${p.id}`" v-model="allowances[p.id]" type="number" min="0.01" max="10000" step="0.01" inputmode="decimal" class="field" placeholder="None" />
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="btn btn-primary" :disabled="busy">Save keys and allowances</button>
+        <p v-if="notice.keys" class="text-sm" :class="notice.keys.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.keys.text }}</p>
+      </div>
+    </form>
+
+    <!-- Sandbox -->
+    <form v-else-if="tab === 'sandbox'" class="space-y-5" @submit.prevent="saveSandbox">
+      <div class="surface flex items-start gap-3 p-4" :class="sandbox.active ? '!border-emerald-500/30' : ''">
+        <Icon :name="sandbox.active ? 'shield' : 'alert'" class="mt-0.5 h-5 w-5 shrink-0" :class="sandbox.active ? 'text-emerald-300' : 'text-amber-300'" />
+        <p class="text-sm leading-relaxed text-slate-200">
+          <template v-if="sandbox.active">The Docker sandbox is on. Agent test commands such as <code class="font-mono">pytest</code> run on their own inside it, with only the workspace mounted and no network. Anything else still asks you first.</template>
+          <template v-else>The sandbox is off: {{ sandbox.problem }}. Every agent command asks you to approve it first and shows the exact command.</template>
+        </p>
+      </div>
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-200">
+        <input v-model="sandboxForm.enabled" type="checkbox" class="h-4 w-4 accent-cyan-500" />
+        Run agent commands in the Docker sandbox
+      </label>
+      <div class="grid gap-4 sm:grid-cols-[1fr_9rem]">
+        <div>
+          <label for="image" class="label">Image</label>
+          <input id="image" v-model="sandboxForm.image" class="field font-mono" spellcheck="false" autocomplete="off" />
+          <p class="hint mt-1">Pick an image that has the tools your project tests with (Python, Node…). JULI doesn't download images for you.</p>
+        </div>
+        <div>
+          <label for="timeout" class="label">Timeout (seconds)</label>
+          <input id="timeout" v-model.number="sandboxForm.timeout" type="number" min="5" max="3600" class="field" />
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="submit" class="btn btn-primary" :disabled="busy">Save sandbox</button>
+        <p v-if="notice.sandbox" class="text-sm" :class="notice.sandbox.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.sandbox.text }}</p>
+      </div>
+    </form>
+
+    <!-- Theme -->
+    <div v-else class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Theme">
+      <button v-for="t in THEMES" :key="t.id" type="button" role="radio" :aria-checked="theme === t.id" class="surface flex items-center gap-3 p-3 text-left transition-colors hover:bg-white/[0.04]" :class="theme === t.id ? '!border-white/40' : ''" @click="pickTheme(t)">
+        <span class="flex h-10 w-10 shrink-0 items-end gap-0.5 rounded-lg p-1.5" :style="{ backgroundColor: t.bg, border: `1px solid ${t.border}` }" aria-hidden="true">
+          <span class="h-2 flex-1 rounded-sm" :style="{ backgroundColor: t.accent }"></span>
+          <span class="h-4 flex-1 rounded-sm" :style="{ backgroundColor: t.text }"></span>
+        </span>
+        <span class="min-w-0">
+          <span class="block text-sm font-medium text-white">{{ t.name }}</span>
+          <span class="block text-xs text-slate-400">{{ t.desc }}</span>
+        </span>
+        <Icon v-if="theme === t.id" name="check" class="ml-auto h-4 w-4 text-white" />
+      </button>
     </div>
-  </transition>
+  </SidePanel>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, watch } from 'vue'
-import AgentOrb from './AgentOrb.vue'
+// Run limits, API keys with health badges and allowances, the Docker sandbox, and the theme.
+import { ref, reactive, computed, watch } from 'vue'
+import Icon from './Icon.vue'
+import SidePanel from './SidePanel.vue'
 import { apiFetch } from '../api.js'
+import { THEMES, applyTheme, savedThemeId } from '../theme.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
-  currentAgents: { type: Array, default: () => [] },
+  settings: { type: Object, default: () => ({}) },
+  providers: { type: Array, default: () => [] },
+  localModels: { type: Array, default: () => [] },
 })
+const emit = defineEmits(['close', 'saved'])
 
-const emit = defineEmits(['close', 'agents-updated'])
-
-const activeTab = ref('agents')
-const showAddAgent = ref(false)
-const saveMessage = ref('')
-
-const settings = reactive({
-  agents: {},
-  key_hints: {},
-  available_models: [],
-})
-
-const apiKeys = reactive({})
-const showKey = reactive({})
-const showAddProvider = ref(false)
-const newProviderName = ref('')
-const newProviderKey = ref('')
-
-const newAgent = reactive({
-  name: '',
-  model: 'ollama:qwen3:8b',
-  prompt: '',
-  color: '#6b7280',
-  icon: 'system',
-})
-
-const tabs = [
-  { id: 'agents', label: 'Agents' },
-  { id: 'prompts', label: 'Prompts' },
-  { id: 'keys', label: 'API Keys' },
-  { id: 'themes', label: 'Themes' },
+const TABS = [
+  { id: 'run', label: 'Run limits' },
+  { id: 'keys', label: 'API keys' },
+  { id: 'sandbox', label: 'Sandbox' },
+  { id: 'theme', label: 'Theme' },
 ]
+const tab = ref('run')
+const busy = ref(false)
+const notice = reactive({ run: null, keys: null, sandbox: null })
 
-const iconOptions = [
-  { id: 'planner', label: 'Planner' },
-  { id: 'coder', label: 'Coder' },
-  { id: 'reviewer', label: 'Shield' },
-  { id: 'devops', label: 'Rocket' },
-  { id: 'test', label: 'Beaker' },
-  { id: 'docs', label: 'Document' },
-  { id: 'user', label: 'User' },
-  { id: 'system', label: 'Cog' },
-  { id: 'database', label: 'Database' },
-  { id: 'brain', label: 'Brain' },
-  { id: 'chart', label: 'Chart' },
-  { id: 'globe', label: 'Globe' },
-  { id: 'wrench', label: 'Wrench' },
-  { id: 'lock', label: 'Lock' },
-  { id: 'bolt', label: 'Bolt' },
-  { id: 'eye', label: 'Eye' },
-  { id: 'heart', label: 'Heart' },
-  { id: 'sparkles', label: 'Sparkles' },
-  { id: 'fire', label: 'Fire' },
-  { id: 'puzzle', label: 'Puzzle' },
-]
+// ─── Run limits ───
+const run = reactive({})
+const keys = reactive({})
+const show = reactive({})
+const allowances = reactive({})
+const results = reactive({}) // provider -> last health check
 
-const colorOptions = [
-  '#6366f1', '#06b6d4', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6',
-  '#ec4899', '#f97316', '#3b82f6', '#6b7280', '#14b8a6', '#a855f7',
-  '#e11d48', '#0ea5e9', '#84cc16', '#d946ef', '#facc15', '#78716c',
-  '#22d3ee', '#fb923c',
-]
+watch(() => [props.open, props.settings], () => {
+  if (!props.open) return
+  const r = props.settings.run || {}
+  Object.assign(run, { ...r, budget_usd: r.budget_usd ?? '', token_cap: r.token_cap ?? '', fallback_model: r.fallback_model ?? '' })
+  for (const p of Object.keys(allowances)) delete allowances[p]
+  for (const [p, v] of Object.entries(r.allowances || {})) allowances[p] = v
+}, { immediate: true })
 
-const activeTheme = ref('midnight')
-
-const themePresets = [
-  { id: 'midnight', name: 'Midnight', desc: 'Deep dark with cyan accents', bg: '#0a0e1a', panel: '#0d1321', accent: '#06b6d4', border: '#1a2744', text: '#94a3b8' },
-  { id: 'cayman', name: 'Cayman', desc: 'Ocean teal gradient feel', bg: '#0d1117', panel: '#111822', accent: '#27d4a5', border: '#1a3a35', text: '#9eb3a8' },
-  { id: 'slate', name: 'Slate', desc: 'Cool grey sophistication', bg: '#1a1d23', panel: '#21252b', accent: '#7c8aff', border: '#2d333b', text: '#adbac7' },
-  { id: 'hacker', name: 'Hacker', desc: 'Terminal green on black', bg: '#0d0d0d', panel: '#141414', accent: '#39ff14', border: '#1a2e1a', text: '#7dbb7d' },
-  { id: 'architect', name: 'Architect', desc: 'Blueprint blue on navy', bg: '#0a1628', panel: '#0f1d32', accent: '#4a9eff', border: '#1c3554', text: '#8ba4c4' },
-  { id: 'merlot', name: 'Merlot', desc: 'Rich wine red tones', bg: '#1a0a10', panel: '#21101a', accent: '#e84393', border: '#3a1a2a', text: '#b88a9a' },
-  { id: 'minimal', name: 'Minimal', desc: 'Clean near-black + white', bg: '#111111', panel: '#1a1a1a', accent: '#ffffff', border: '#2a2a2a', text: '#888888' },
-  { id: 'tactile', name: 'Tactile', desc: 'Warm amber on charcoal', bg: '#1a1510', panel: '#211c14', accent: '#f59e0b', border: '#3a3020', text: '#b8a88a' },
-]
-
-const providerLabels = { openai: 'OpenAI', anthropic: 'Anthropic', google: 'Google AI' }
-const providerColors = { openai: '#10b981', anthropic: '#f59e0b', google: '#3b82f6' }
-
-// Model refs look like "provider:model", e.g. "anthropic:claude-sonnet-5-5".
-function modelLabel(m) {
-  const [provider, ...rest] = m.split(':')
-  return rest.length ? `${rest.join(':')} (${providerLabels[provider] || provider})` : m
+const blank = v => v === '' || v == null
+function allowanceMap() {
+  const allow = {}
+  for (const [p, v] of Object.entries(allowances)) if (!blank(v)) allow[p] = Number(v)
+  return allow
 }
-
-function formatName(name) {
-  return name.replace(/([A-Z])/g, ' $1').trim()
-}
-
-function buildDefaultAgents() {
-  const defaults = {}
-  for (const a of props.currentAgents) {
-    defaults[a.name] = {
-      model: a.model,
-      prompt: '',
-      color: a.color || '#6b7280',
-      icon: a.icon || 'system',
-    }
+function runBody() {
+  return {
+    budget_usd: blank(run.budget_usd) ? null : Number(run.budget_usd),
+    token_cap: blank(run.token_cap) ? null : Math.round(Number(run.token_cap)),
+    privacy_mode: Boolean(run.privacy_mode),
+    auto_fallback: Boolean(run.auto_fallback),
+    fallback_model: run.fallback_model ? run.fallback_model.trim() : null,
+    discussion_rounds: Number(run.discussion_rounds) || 0,
+    allowances: allowanceMap(),
   }
-  return defaults
 }
 
-async function fetchSettings() {
-  // Always start with local agent data as base
-  const localDefaults = buildDefaultAgents()
-  if (Object.keys(localDefaults).length && !Object.keys(settings.agents).length) {
-    Object.assign(settings.agents, localDefaults)
-  }
+async function saveRun() {
+  await act('run', async () => {
+    await apiFetch('/api/settings/run', { method: 'PUT', body: runBody() })
+    return 'Limits saved'
+  })
+}
+
+// ─── Keys ───
+const keyProviders = computed(() => props.providers.filter(p => p.needs_key))
+
+const HEALTH = {
+  ok: ['Working', 'bg-emerald-500/15 text-emerald-300'],
+  invalid: ['Invalid', 'bg-red-500/15 text-red-300'],
+  out_of_credit: ['Out of credit', 'bg-red-500/15 text-red-300'],
+  rate_limit: ['Rate limited', 'bg-amber-500/15 text-amber-200'],
+  overloaded: ['Overloaded', 'bg-amber-500/15 text-amber-200'],
+  missing: ['No key', 'bg-slate-500/20 text-slate-300'],
+  skipped: ['Not checked: Privacy mode', 'bg-slate-500/20 text-slate-300'],
+}
+function health(p) {
+  const r = results[p.id]
+  if (!r) return p.key_hint ? { label: 'Not checked', tone: 'bg-slate-500/20 text-slate-300', detail: '' } : { label: 'No key', tone: 'bg-slate-500/20 text-slate-300', detail: '' }
+  const [label, tone] = HEALTH[r.status] || ['Problem', 'bg-red-500/15 text-red-300']
+  return { label, tone, detail: r.detail || '' }
+}
+
+const checking = reactive({})
+async function check(id) {
+  checking[id] = true
   try {
-    const data = await apiFetch('/api/settings')
-    settings.key_hints = data.key_hints || {}
-    if (data.agents && Object.keys(data.agents).length) {
-      Object.assign(settings, data)
-    }
-  } catch {
-    // Backend offline — use local defaults, which are already set
-  }
-}
-
-function updateAgentField(name, field, value) {
-  settings.agents[name][field] = value
-  saveAgents()
-}
-
-let saveTimeout = null
-async function saveAgents() {
-  clearTimeout(saveTimeout)
-  saveTimeout = setTimeout(async () => {
-    try {
-      await apiFetch('/api/settings/agents', { method: 'PUT', body: settings.agents })
-      flash('Settings saved')
-      emit('agents-updated', settings.agents)
-    } catch (e) {
-      flash(`Not saved: ${e.message}`)
-    }
-  }, 500)
-}
-
-async function addAgent() {
-  if (!newAgent.name.trim()) return
-  const agentName = newAgent.name.replace(/\s+/g, '')
-  if (settings.agents[agentName]) {
-    flash(`An agent named ${agentName} already exists`)
-    return
-  }
-  settings.agents[agentName] = {
-    model: newAgent.model,
-    prompt: newAgent.prompt || `You are ${newAgent.name}. Follow instructions precisely.`,
-    color: colorOptions[Object.keys(settings.agents).length % colorOptions.length],
-    icon: 'system',
-  }
-  try {
-    await apiFetch('/api/settings/agents', {
-      method: 'POST',
-      body: { name: agentName, ...settings.agents[agentName] },
-    })
+    results[id] = await apiFetch(`/api/providers/${id}/check`, { method: 'POST' })
   } catch (e) {
-    delete settings.agents[agentName]
-    flash(`Not created: ${e.message}`)
-    return
-  }
-  newAgent.name = ''
-  newAgent.prompt = ''
-  showAddAgent.value = false
-  flash('Agent created')
-  emit('agents-updated', settings.agents)
-}
-
-async function removeAgent(name) {
-  try {
-    await apiFetch(`/api/settings/agents/${encodeURIComponent(name)}`, { method: 'DELETE' })
-  } catch (e) {
-    flash(`Not removed: ${e.message}`)
-    return
-  }
-  delete settings.agents[name]
-  flash('Agent removed')
-  emit('agents-updated', settings.agents)
-}
-
-async function saveApiKeys() {
-  try {
-    await apiFetch('/api/settings/keys', { method: 'PUT', body: apiKeys })
-    for (const p of Object.keys(apiKeys)) delete apiKeys[p]
-    flash('API keys saved')
-    await fetchSettings()
-  } catch (e) {
-    flash(`Not saved: ${e.message}`)
+    results[id] = { status: 'error', detail: e.message }
+  } finally {
+    checking[id] = false
   }
 }
 
-function addProvider() {
-  // Provider ids are ^[a-z][a-z0-9_]{0,31}$ on the server.
-  const name = newProviderName.value.trim().toLowerCase().replace(/\s+/g, '_')
-    .replace(/[^a-z0-9_]/g, '').replace(/^[^a-z]+/, '').slice(0, 32)
-  if (!name) return
-  settings.key_hints[name] = ''
-  apiKeys[name] = newProviderKey.value || ''
-  showKey[name] = false
-  newProviderName.value = ''
-  newProviderKey.value = ''
-  showAddProvider.value = false
-  flash('Provider added')
-  saveApiKeys()
-}
-
-async function removeProvider(provider) {
-  try {
-    await apiFetch(`/api/settings/keys/${encodeURIComponent(provider)}`, { method: 'DELETE' })
-  } catch (e) {
-    flash(`Not removed: ${e.message}`)
-    return
-  }
-  delete settings.key_hints[provider]
-  delete apiKeys[provider]
-  delete showKey[provider]
-  flash('Provider removed')
-}
-
-function flash(msg) {
-  saveMessage.value = msg
-  setTimeout(() => { saveMessage.value = '' }, 2000)
-}
-
-function hexToRgb(hex) {
-  let c = hex.substring(1)
-  if (c.length === 3) c = c.split('').map(x => x + x).join('')
-  let r = parseInt(c.slice(0, 2), 16)
-  let g = parseInt(c.slice(2, 4), 16)
-  let b = parseInt(c.slice(4, 6), 16)
-  return `${r}, ${g}, ${b}`
-}
-
-function applyTheme(theme) {
-  activeTheme.value = theme.id
-  const root = document.documentElement
-  root.style.setProperty('--color-juli-bg', theme.bg)
-  root.style.setProperty('--color-juli-bg-rgb', hexToRgb(theme.bg))
-  root.style.setProperty('--color-juli-panel', theme.panel)
-  root.style.setProperty('--color-juli-panel-rgb', hexToRgb(theme.panel))
-  root.style.setProperty('--color-juli-accent', theme.accent)
-  root.style.setProperty('--color-juli-accent-rgb', hexToRgb(theme.accent))
-  root.style.setProperty('--color-juli-border', theme.border)
-  root.style.setProperty('--color-juli-border-rgb', hexToRgb(theme.border))
-  root.style.setProperty('--color-juli-muted', theme.text)
-  root.style.setProperty('--color-juli-muted-rgb', hexToRgb(theme.text))
-  localStorage.setItem('juli-theme', JSON.stringify(theme))
-  flash(`Theme: ${theme.name}`)
-}
-
-function restoreTheme() {
-  try {
-    const saved = localStorage.getItem('juli-theme')
-    if (saved) {
-      const theme = JSON.parse(saved)
-      applyTheme(theme)
+async function saveKeys() {
+  await act('keys', async () => {
+    const typed = Object.fromEntries(Object.entries(keys).filter(([, v]) => v && v.trim()))
+    if (Object.keys(typed).length) {
+      const res = await apiFetch('/api/settings/keys', { method: 'PUT', body: typed })
+      Object.assign(results, res.health || {})
+      for (const p of Object.keys(keys)) delete keys[p]
     }
-  } catch { /* use default */ }
+    // Only the allowances: unsaved edits on the Run limits tab stay unsaved.
+    await apiFetch('/api/settings/run', { method: 'PUT', body: { ...props.settings.run, allowances: allowanceMap() } })
+    return 'Saved'
+  })
 }
 
-watch(() => props.open, (val) => { if (val) fetchSettings() })
-onMounted(() => {
-  fetchSettings()
-  restoreTheme()
-})
+async function removeKey(id) {
+  await act('keys', async () => {
+    await apiFetch(`/api/settings/keys/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    delete results[id]
+    return 'Key removed from the keychain'
+  })
+}
+
+// ─── Sandbox ───
+const sandbox = reactive({ active: false, problem: '' })
+const sandboxForm = reactive({ enabled: false, image: '', timeout: 120 })
+
+async function loadSandbox() {
+  try {
+    const s = await apiFetch('/api/sandbox')
+    Object.assign(sandbox, s)
+    Object.assign(sandboxForm, s.settings)
+  } catch (e) {
+    notice.sandbox = { ok: false, text: e.message }
+  }
+}
+watch(tab, t => { if (t === 'sandbox') loadSandbox() })
+watch(() => props.open, o => { if (o && tab.value === 'sandbox') loadSandbox() })
+
+async function saveSandbox() {
+  await act('sandbox', async () => {
+    const s = await apiFetch('/api/sandbox', { method: 'PUT', body: { ...sandboxForm, image: sandboxForm.image.trim() } })
+    Object.assign(sandbox, s)
+    return s.active ? 'Saved. The sandbox is on.' : 'Saved'
+  })
+}
+
+// ─── Theme ───
+const theme = ref(savedThemeId() || 'midnight')
+function pickTheme(t) {
+  theme.value = t.id
+  applyTheme(t)
+}
+
+async function act(section, fn) {
+  busy.value = true
+  notice[section] = null
+  try {
+    notice[section] = { ok: true, text: await fn() }
+    emit('saved')
+  } catch (e) {
+    notice[section] = { ok: false, text: e.message }
+  } finally {
+    busy.value = false
+  }
+}
 </script>

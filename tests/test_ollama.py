@@ -25,6 +25,20 @@ def wait_for(jobs: ollama.PullJobs, model: str, timeout: float = 5.0) -> dict:
     raise AssertionError(f"{model} still pulling")
 
 
+def wait_for_event(seen: list, status: str, timeout: float = 5.0) -> None:
+    """Wait until a pull_progress event with this status reaches a subscriber.
+
+    A pull updates its job before it publishes the event, so the job can read
+    "success" a moment before the event has gone out.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if any(m.message_type == "pull_progress" and m.data["status"] == status for m in seen):
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"no {status} pull_progress event")
+
+
 def ollama_routes(extra: dict | None = None) -> dict:
     return {
         ("GET", "/api/version"): (200, {"version": "0.20.0"}, {}),
@@ -162,6 +176,7 @@ def test_pull_route_runs_in_the_background(client, net, fresh_pulls):
         r = client.post("/api/local/pulls", json={"model": "qwen3:8b"}, headers=AUTH)
         assert r.status_code == 202 and r.json()["status"] == "pulling"
         job = wait_for(fresh_pulls, "qwen3:8b")
+        wait_for_event(seen, "success")  # stay subscribed until the last event is out
     finally:
         message_bus.unsubscribe_sync(seen.append)
     assert job["status"] == "success" and job["completed"] == LAYERS_TOTAL

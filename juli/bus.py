@@ -5,9 +5,11 @@ Agents publish from worker threads; WebSocket consumers read asyncio queues on
 the event loop. publish() hands each message to a queue's own loop with
 loop.call_soon_threadsafe and drops it if that queue is full.
 
-Chunk messages (streamed text) and model download progress are live only:
-they are neither kept in the in-memory history nor stored. turn_start messages stay in the live view (so a
-client that reconnects knows who is working) but aren't stored either. The bus knows nothing about storage: the API
+Chunk messages (streamed text), agent command output and model download
+progress are live only: they are neither kept in the in-memory history nor
+stored. turn_start and command_start messages stay in the live view (so a
+client that reconnects knows who is working) but aren't stored either; a
+command's final result is. The bus knows nothing about storage: the API
 registers a persister callback at startup.
 """
 
@@ -32,7 +34,8 @@ class AgentMessage:
     agent_name: str
     content: str
     timestamp: str = field(default_factory=_now)
-    # agent, chunk, system, warning, error, status, decision, limit_reached, pull_progress
+    # agent, chunk, system, warning, error, status, decision, limit_reached, pull_progress,
+    # turn_start, files, command_start, command_output, command
     message_type: str = "agent"
     model: str | None = None
     tokens_in: int | None = None
@@ -57,10 +60,10 @@ class AgentMessage:
 Persister = Callable[[str, int | None, dict], None]
 
 # Live-only message types: not kept in the in-memory history (nor stored).
-LIVE_ONLY = ("chunk", "pull_progress")
+LIVE_ONLY = ("chunk", "pull_progress", "command_output")
 
 # Message types that never reach the persister.
-NOT_STORED = ("status", "turn_start", *LIVE_ONLY)
+NOT_STORED = ("status", "turn_start", "command_start", *LIVE_ONLY)
 
 # A paused run still owns the bus: no other task may start meanwhile.
 BUSY = ("running", "paused")

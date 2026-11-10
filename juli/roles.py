@@ -91,13 +91,24 @@ ACTIVITIES = {
     "custom": "working",
     "discuss": "discussing the plan",
     "revise": "revising the plan",
+    "fix": "fixing a failed command",
 }
+
+FILES = (
+    "Put each file in its own fenced code block whose info string names the language and "
+    "the file path, for example ```python path=src/app.py. Always give complete files."
+)
+COMMANDS = (
+    "To run a check such as the tests, put the command alone in a ```bash run block, "
+    "for example `pytest -q`. It runs in the project folder; the user may have to approve it."
+)
 
 # Appended to an agent's prompt so the pipeline works whatever the user edits.
 PROTOCOL = {
-    "coder": (
-        "Put each file in its own fenced code block whose info string names the language and "
-        "the file path, for example ```python path=src/app.py. Always give complete files."
+    "coder": f"{FILES} {COMMANDS}",
+    "tester": f"{FILES} {COMMANDS}",
+    "fix": (
+        "A command failed. Fix the code so it passes, and give only the files you change. " + FILES
     ),
     "reviewer": (
         "End your reply with exactly one final line: `VERDICT: APPROVED` if the code is ready, "

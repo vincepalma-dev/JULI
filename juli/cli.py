@@ -6,6 +6,7 @@ settings, runs are stored in the same database (project "CLI" by default),
 and each agent's reply streams as it arrives.
 """
 
+import json
 import os
 import queue
 import re
@@ -27,18 +28,28 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from juli import config, engine, keystore, providers, store
+from juli import config, engine, keystore, providers, store, terminal, workspace
 from juli.bus import AgentMessage, message_bus
 from juli.local import catalogue, crew, hardware, ollama
 
 app = typer.Typer(name="juli", help="JULI: a local-first crew of AI agents.", add_completion=False)
 models_app = typer.Typer(help="On-device models: installed, catalogue, downloads, benchmarks.", no_args_is_help=True)
 endpoint_app = typer.Typer(help="Custom OpenAI-compatible endpoints (LM Studio, llama.cpp, vLLM...).", no_args_is_help=True)
+workspace_app = typer.Typer(help="A project's files: tree, diff, zip, commit to a run branch, push.", no_args_is_help=True)
 app.add_typer(models_app, name="models")
 app.add_typer(endpoint_app, name="endpoint")
+app.add_typer(workspace_app, name="workspace")
 console = Console()
 
-STYLES = {"system": "dim", "warning": "yellow", "error": "bold red", "limit_reached": "bold yellow", "decision": "bold cyan"}
+STYLES = {
+    "system": "dim",
+    "warning": "yellow",
+    "error": "bold red",
+    "limit_reached": "bold yellow",
+    "decision": "bold cyan",
+    "files": "green",
+    "command": "cyan",
+}
 
 
 class Printer:
@@ -67,10 +78,19 @@ class Printer:
                 self.streaming = msg.agent_name
             console.out(msg.content, end="", highlight=False)
             return
+        if kind == "command_output":
+            console.out(msg.content, end="", highlight=False, style="dim")
+            return
         self._end_line()
         if kind == "agent":
             cost = "" if msg.cost_usd is None else f" · ${msg.cost_usd:.4f}"
             console.print(f"[dim]{msg.tokens_in or 0} tokens in · {msg.tokens_out or 0} out{cost}[/]")
+        elif kind == "command_start":
+            where = "sandbox" if (msg.data or {}).get("sandbox") else "this machine"
+            console.print(f"\n[bold]$ {escape(msg.content)}[/]  [dim]{where}[/]")
+        elif kind == "command":
+            # The output already streamed; show the command and its status.
+            console.print(msg.content.split("\n\n")[0], style=STYLES["command"], markup=False)
         else:
             console.print(msg.content, style=STYLES.get(kind, ""), markup=False)
 
@@ -92,6 +112,8 @@ def _answer(msg: AgentMessage) -> None:
                 error = engine.decide("stop")
             else:
                 error = engine.decide("revise", message=answer)
+        elif data.get("kind") == "command_approval":
+            error = engine.decide("approve" if typer.confirm("Run this command?", default=False) else "deny")
         else:
             model = typer.prompt("Switch to which model (provider:model)? Leave empty to stop", default="", show_default=False)
             error = engine.decide("switch", model.strip()) if model.strip() else engine.decide("stop")
@@ -139,6 +161,13 @@ def run_task(
         no_devops=no_devops,
         review_source=engine.review_source(project_id) if mode == "review" else "",
     )
+    _check_allowance(run, settings, ignore_allowance)
+    console.print(f"[bold]Mode:[/] {mode}   [bold]Project:[/] {escape(project)}")
+    console.print(f"[bold]Task:[/] {escape(prompt)}", highlight=False)
+    _drive(run, project_id, settings, voice=voice, output_dir=output_dir)
+
+
+def _check_allowance(run: engine.Run, settings: dict, ignore_allowance: bool) -> None:
     warnings, blocked = engine.allowance_report(run.agents, settings)
     if blocked and not ignore_allowance:
         for line in blocked:
@@ -147,10 +176,10 @@ def run_task(
         raise typer.Exit(1)
     run.notices = warnings + blocked
 
-    colors = {name: cfg.get("color", "white") for name, cfg in settings["agents"].items()}
-    console.print(f"[bold]Mode:[/] {mode}   [bold]Project:[/] {escape(project)}")
-    console.print(f"[bold]Task:[/] {escape(prompt)}", highlight=False)
 
+def _drive(run: engine.Run, project_id: str, settings: dict, *, voice: bool, output_dir: str, run_id: int | None = None) -> None:
+    """Run to the end, printing it and answering its pauses; `run_id` resumes that run."""
+    colors = {name: cfg.get("color", "white") for name, cfg in settings["agents"].items()}
     message_bus.set_persister(store.save_message)
     decisions: queue.Queue = queue.Queue()
     printer = Printer(colors)
@@ -163,7 +192,7 @@ def run_task(
 
             speak(msg.content, msg.agent_name)
 
-    run_id = engine.begin(project_id, run)
+    run_id = engine.begin(project_id, run, run_id)
     if run_id is None:
         message_bus.set_persister(None)
         console.print("A task is already running.", style="red")
@@ -201,6 +230,7 @@ def run_task(
     )
     console.print(f"Saved to {save_output(message_bus.history, output_dir)}", highlight=False)
     if result.status == "error":
+        console.print(f"Fix the cause, then `juli resume {run_id}` continues from the last finished step.")
         raise typer.Exit(1)
 
 
@@ -233,6 +263,47 @@ def run(
         voice=voice,
         output_dir=output_dir,
     )
+
+
+@app.command("resume")
+def resume(
+    run_id: int | None = typer.Argument(None, help="The run to resume; default is the project's latest resumable run"),
+    project: str = typer.Option("CLI", "--project", help="Project to look in when no run is given"),
+    list_only: bool = typer.Option(False, "--list", help="Only list the runs that can resume"),
+    ignore_allowance: bool = typer.Option(False, "--ignore-allowance", help="Run even if a monthly allowance is used up"),
+    voice: bool = typer.Option(False, "--voice", "-v", help="Speak each agent's reply"),
+    output_dir: str = typer.Option("./workspace", "--output", "-o", help="Where to save the transcript"),
+) -> None:
+    """Resume a run that a restart, crash or error cut short, from its last finished step."""
+    store.init_db()
+    config.migrate_legacy_settings()
+    if list_only or run_id is None:
+        runs = store.resumable_runs(store.find_or_create_project(project))
+        if list_only:
+            table = Table(title="Runs that can resume")
+            for column in ("Run", "Status", "Mode", "Started", "Task"):
+                table.add_column(column)
+            for r in runs:
+                table.add_row(str(r["id"]), r["status"], r["mode"], r["started_at"][:16], r["prompt"][:60])
+            console.print(table if runs else "No run in this project can resume.")
+            return
+        if not runs:
+            console.print("No run in this project can resume.", style="red")
+            raise typer.Exit(1)
+        run_id = runs[0]["id"]
+    row, checkpoint = store.get_run(run_id), store.get_checkpoint(run_id)
+    if not row or not checkpoint or row["status"] not in store.RESUMABLE:
+        console.print(f"Run {run_id} has no checkpoint to resume from.", style="red")
+        raise typer.Exit(1)
+    settings = config.load_settings()
+    try:
+        run = engine.Run.from_checkpoint(json.loads(checkpoint), settings=settings)
+    except (ValueError, KeyError, TypeError) as e:
+        console.print(f"The checkpoint can't be used: {e}", style="red", markup=False)
+        raise typer.Exit(1) from None
+    _check_allowance(run, settings, ignore_allowance)
+    console.print(f"[bold]Resuming run {run_id}:[/] {escape(row['prompt'])}", highlight=False)
+    _drive(run, row["project_id"], settings, voice=voice, output_dir=output_dir, run_id=run_id)
 
 
 @app.command("ask")
@@ -563,6 +634,156 @@ def remove_endpoint(endpoint_id: str = typer.Argument(..., help="The endpoint id
         console.print(f"No endpoint named {endpoint_id}.", style="red", markup=False)
         raise typer.Exit(1) from None
     console.print(f"Removed {endpoint_id}.", markup=False)
+
+
+# ─── Workspace and sandbox ───────────────────────────────────
+
+
+def _project_id(project: str) -> str:
+    store.init_db()
+    return store.find_or_create_project(project)
+
+
+def _run_id(project_id: str, run_id: int | None) -> int:
+    """The given run, which must belong to the project, or its latest run."""
+    if run_id is None:
+        runs = store.get_runs(project_id)
+        if not runs:
+            console.print("This project has no runs yet.", style="red")
+            raise typer.Exit(1)
+        return runs[-1]["id"]
+    row = store.get_run(run_id)
+    if not row or row["project_id"] != project_id:
+        console.print(f"No run {run_id} in this project.", style="red")
+        raise typer.Exit(1)
+    return run_id
+
+
+@contextmanager
+def _git_errors() -> Iterator[None]:
+    try:
+        yield
+    except workspace.GitError as e:
+        console.print(str(e), style="red", markup=False)
+        raise typer.Exit(1) from None
+
+
+@workspace_app.command("tree")
+def workspace_tree(project: str = typer.Option("CLI", "--project", help="The project")) -> None:
+    """List the files in the project's workspace."""
+    project_id = _project_id(project)
+    files = workspace.tree(project_id)
+    if not files:
+        console.print("The workspace is empty.")
+        return
+    for f in files:
+        console.print(f"{f['path']}  [dim]{f['size']:,} B[/]", highlight=False)
+    console.print(f"[dim]{workspace.root(project_id)}[/]", highlight=False)
+
+
+@workspace_app.command("show")
+def workspace_show(path: str = typer.Argument(..., help="A file in the workspace"), project: str = typer.Option("CLI", "--project")) -> None:
+    """Print one file from the workspace."""
+    try:
+        f = workspace.read_file(_project_id(project), path)
+    except workspace.PathRefused as e:
+        console.print(f"That path isn't allowed: {e}", style="red", markup=False)
+        raise typer.Exit(1) from None
+    except FileNotFoundError:
+        console.print(f"No file {path} in the workspace.", style="red", markup=False)
+        raise typer.Exit(1) from None
+    if f["content"] is None:
+        console.print(f"{f['path']} is {'too large' if f['too_large'] else 'binary'} ({f['size']:,} B).", markup=False)
+        return
+    console.out(f["content"], end="", highlight=False)
+
+
+@workspace_app.command("diff")
+def workspace_diff(run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")) -> None:
+    """Show what a run changed, as a unified diff."""
+    run_id = _run_id(_project_id(project), run)
+    console.out(workspace.diff(run_id) or f"Run {run_id} wrote no files.\n", end="", highlight=False)
+
+
+@workspace_app.command("zip")
+def workspace_zip(out: str = typer.Argument(..., help="The .zip file to write"), project: str = typer.Option("CLI", "--project")) -> None:
+    """Save the workspace (without .git) as a zip file."""
+    data = workspace.zip_tree(_project_id(project))
+    with open(out, "wb") as f:
+        f.write(data)
+    console.print(f"Saved {len(data):,} bytes to {out}", highlight=False, markup=False)
+
+
+@workspace_app.command("commit")
+def workspace_commit(run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")) -> None:
+    """Commit the workspace to branch juli/run-<id> (in the workspace's own repo)."""
+    project_id = _project_id(project)
+    run_id = _run_id(project_id, run)
+    row = store.get_run(run_id) or {}
+    title = ((row.get("prompt") or "").strip().splitlines() or [""])[0][:72]
+    with _git_errors():
+        result = workspace.commit(project_id, run_id, f"JULI run {run_id}: {title}")
+    console.print(result["detail"] + (f" ({result['commit'][:10]})" if result["commit"] else ""), markup=False)
+
+
+@workspace_app.command("push")
+def workspace_push(
+    run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"),
+    remote: str | None = typer.Option(None, "--remote", help="https://, ssh:// or git@host:path; saved as origin"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Don't ask first"),
+    project: str = typer.Option("CLI", "--project"),
+) -> None:
+    """Push a run's branch (commit it first). Asks before pushing."""
+    project_id = _project_id(project)
+    run_id = _run_id(project_id, run)
+    if remote and workspace.remote_problem(remote):
+        console.print(workspace.remote_problem(remote), style="red", markup=False)
+        raise typer.Exit(1)
+    with _git_errors():
+        target = remote or workspace.current_remote(project_id)
+    if not target:
+        console.print("Say which remote to push to with --remote.", style="red")
+        raise typer.Exit(1)
+    if not yes and not typer.confirm(f"Push {workspace.branch_name(run_id)} to {target}?", default=False):
+        raise typer.Exit(1)
+    with _git_errors():
+        result = workspace.push(project_id, run_id, remote)
+    console.print(f"{result['detail']} to {result['remote']}", markup=False)
+
+
+@app.command("sandbox")
+def sandbox(
+    state: str | None = typer.Argument(None, help="on or off; leave out to show the current state"),
+    image: str | None = typer.Option(None, "--image", help="The Docker image commands run in"),
+    timeout: int | None = typer.Option(None, "--timeout", min=5, max=3600, help="Seconds per command"),
+) -> None:
+    """Show or set the Docker sandbox for agent commands."""
+    from pydantic import ValidationError
+
+    from juli.api.models import SandboxSettings
+
+    if state is not None and state.lower() not in ("on", "off"):
+        console.print("Say on or off.", style="red")
+        raise typer.Exit(1)
+    with config.settings_lock:
+        settings = config.load_settings()
+        cfg = terminal.sandbox_settings(settings)
+        if state is not None or image or timeout:
+            enabled = state.lower() == "on" if state else bool(cfg["enabled"])
+            try:
+                cfg = SandboxSettings(enabled=enabled, image=image or cfg["image"], timeout=timeout or cfg["timeout"]).model_dump()
+            except ValidationError:
+                console.print("That isn't a valid Docker image name.", style="red")
+                raise typer.Exit(1) from None
+            settings["sandbox"] = cfg
+            config.save_settings(settings)
+    problem = terminal.sandbox_problem(cfg)
+    console.print(f"Sandbox: {'on' if problem is None else 'off'} · image {cfg['image']} · timeout {cfg['timeout']} s", markup=False)
+    if problem:
+        console.print(f"Every agent command asks first: {problem}.", style="yellow", markup=False)
+    else:
+        console.print("Test and lint commands without shell metacharacters run on their own; the rest ask first.")
+        console.print(f"The image must already have the tools (no network inside). Pull it with `docker pull {cfg['image']}`.", markup=False)
 
 
 def main() -> None:

@@ -34,6 +34,15 @@ DEFAULT_RUN = {
     "allowances": {},
 }
 
+# The Docker sandbox for agent commands. Off by default: every command then
+# asks first. The image must already hold the tools the commands use
+# (pytest, npm...), since the container has no network.
+DEFAULT_SANDBOX = {
+    "enabled": False,
+    "image": "python:3.12-slim",
+    "timeout": 120,  # seconds per command, in or out of the sandbox
+}
+
 # Model keys saved before provider:model refs, mapped to the verified presets.
 LEGACY_MODEL_REFS = {
     "gpt4": "openai:gpt-6.1-sol",
@@ -77,6 +86,7 @@ def default_settings() -> dict:
         "providers": list(DEFAULT_PROVIDERS),
         "available_models": [],
         "run": {**DEFAULT_RUN, "allowances": {}},
+        "sandbox": dict(DEFAULT_SANDBOX),
     }
 
 
@@ -131,6 +141,7 @@ def load_settings() -> dict:
     data.setdefault("providers", list(DEFAULT_PROVIDERS))
     data.setdefault("available_models", [])
     data["run"] = {**DEFAULT_RUN, "allowances": {}, **(data.get("run") or {})}
+    data["sandbox"] = {**DEFAULT_SANDBOX, **(data.get("sandbox") or {})}
     upgrade_models(data)
     return data
 

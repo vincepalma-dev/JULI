@@ -28,6 +28,10 @@ python-dotenv>=1.0.0
 keyring>=25.0.0
 psutil>=5.9.0  # RAM and CPU cores for the model fit check
 
+# IDE terminal (a PTY per session)
+pywinpty>=3.1; sys_platform == "win32"
+ptyprocess>=0.7; sys_platform != "win32"
+
 # Development
 pytest>=8.0.0
 httpx2>=2.0  # tests mock the SDKs' HTTP client with it

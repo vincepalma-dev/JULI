@@ -219,3 +219,20 @@ def test_dashboard_answers_head(dist):
     with TestClient(create_app(token=TOKEN, static_dir=dist)) as c:
         r = c.head("/")
         assert r.status_code == 200 and "script-src 'self'" in r.headers["content-security-policy"]
+
+
+def test_serve_keeps_a_preset_origin_list_and_adds_its_own(fake_serve, monkeypatch):
+    import os
+
+    monkeypatch.setenv("JULI_ALLOWED_ORIGINS", "http://example.test:3000")
+    assert CliRunner().invoke(cli.app, ["serve", "--no-browser"]).exit_code == 0
+    assert os.environ["JULI_ALLOWED_ORIGINS"].split(",") == [
+        "http://example.test:3000", "http://127.0.0.1:8000", "http://localhost:8000",
+    ]
+
+
+def test_serve_on_another_port_allows_that_origin(fake_serve):
+    import os
+
+    assert CliRunner().invoke(cli.app, ["serve", "--port", "8040", "--no-browser"]).exit_code == 0
+    assert os.environ["JULI_ALLOWED_ORIGINS"].split(",") == ["http://127.0.0.1:8040", "http://localhost:8040"]

@@ -391,9 +391,12 @@ def serve(
     if build or not (dist / "index.html").is_file():
         build_dashboard()
     origin = f"http://127.0.0.1:{port}"
-    if port != 8000:
-        # The default WebSocket Origin allowlist covers ports 3000 and 8000 only.
-        os.environ.setdefault("JULI_ALLOWED_ORIGINS", f"{origin},http://localhost:{port}")
+    # The dashboard's own origins must pass the WebSocket Origin check. The default
+    # allowlist covers ports 3000 and 8000; a list the user set is kept and extended.
+    existing = [o.strip() for o in os.environ.get("JULI_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if existing or port != 8000:
+        served = [origin, f"http://localhost:{port}"]
+        os.environ["JULI_ALLOWED_ORIGINS"] = ",".join(dict.fromkeys(existing + served))
     token = secrets.token_urlsafe(32)
     link = f"{origin}/#token={token}"
     server = uvicorn.Server(uvicorn.Config(create_app(token, static_dir=dist, port=port), host="127.0.0.1", port=port))

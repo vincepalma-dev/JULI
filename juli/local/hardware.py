@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-import psutil
+import psutil  # type: ignore[import-untyped]  # ships no type stubs
 
 GB = 1e9
 MIB = 1024 * 1024

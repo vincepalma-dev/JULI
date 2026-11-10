@@ -8,7 +8,7 @@
       </div>
     </template>
 
-    <p v-if="error" role="alert" class="mb-4 text-sm text-red-300">{{ error }}</p>
+    <p v-if="panelError" role="alert" class="mb-4 text-sm text-red-300">{{ panelError }}</p>
 
     <!-- Files -->
     <div v-if="tab === 'files'" class="grid gap-4 md:grid-cols-[16rem_1fr]">
@@ -56,6 +56,7 @@
         </div>
         <button type="button" class="btn btn-secondary" :disabled="!runId || !changed.length || gitBusy || runLive" @click="commit"><Icon name="branch" class="h-4 w-4" />Commit to juli/run-{{ runId }}</button>
       </div>
+      <p v-if="errors.run" role="alert" class="text-sm text-red-300">{{ errors.run }}</p>
       <p v-if="runLive" class="hint">This run is still going. Commit when it's done.</p>
       <p v-if="gitNote" class="text-sm" :class="gitNote.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ gitNote.text }}</p>
 
@@ -92,7 +93,7 @@
 <script setup>
 // The project's working tree: files, one file, a zip; each run's changed files
 // and unified diff; commit to juli/run-<id>; push, which always asks first.
-import { ref, computed, watch } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import SidePanel from './SidePanel.vue'
 import { apiDownload, apiFetch } from '../api.js'
@@ -110,7 +111,16 @@ defineEmits(['close'])
 
 const MAX_DIFF_LINES = 4000
 const tab = ref('files')
-const error = ref('')
+// Each kind of request keeps its own error, so one succeeding never hides another's failure.
+const errors = reactive({ tree: '', file: '', zip: '', run: '' })
+// Tree and file errors belong to the Files tab; the zip button is on both tabs, so its
+// error is too. A tree error that leaves no files also shows on Changes: it's why the
+// zip button there is disabled.
+const panelError = computed(() => {
+  const onFiles = tab.value === 'files'
+  const treeShown = onFiles || !files.value.length
+  return [treeShown && errors.tree, onFiles && errors.file, errors.zip].filter(Boolean).join(' ')
+})
 const files = ref([])
 const expanded = ref(new Set())
 const selected = ref('')
@@ -126,11 +136,12 @@ async function loadTree() {
   const project = props.projectId
   if (!project) return
   const request = ++treeRequest
+  errors.tree = ''
   try {
     const tree = await apiFetch(`/api/projects/${project}/workspace/tree`)
     if (request === treeRequest) files.value = tree.files
   } catch (e) {
-    if (request === treeRequest) error.value = e.message
+    if (request === treeRequest) errors.tree = e.message
   }
 }
 
@@ -147,12 +158,12 @@ watch(() => props.projectId, () => {
   diff.value = ''
   pushAsk.value = null
   gitNote.value = null
+  Object.assign(errors, { tree: '', file: '', zip: '', run: '' })
   runId.value = latestRunId()
 })
 
 watch(() => [props.open, props.projectId, props.showPath], ([open]) => {
   if (!open) return
-  error.value = ''
   loadTree()
   if (!runId.value && props.runs.length) runId.value = props.runs[props.runs.length - 1].id
   if (props.showPath) openFile(props.showPath)
@@ -198,6 +209,7 @@ function toggle(path) {
 async function openFile(path) {
   tab.value = 'files'
   selected.value = path
+  errors.file = ''
   // Open the folders above it.
   const next = new Set(expanded.value)
   path.split('/').slice(0, -1).forEach((_, i, parts) => next.add(parts.slice(0, i + 1).join('/')))
@@ -209,15 +221,16 @@ async function openFile(path) {
   } catch (e) {
     if (request !== fileRequest) return
     file.value = null
-    error.value = e.message
+    errors.file = e.message
   }
 }
 
 async function downloadZip() {
+  errors.zip = ''
   try {
     await apiDownload(`/api/projects/${props.projectId}/workspace/zip`, `juli-${props.projectId.slice(0, 8)}.zip`)
   } catch (e) {
-    error.value = e.message
+    errors.zip = e.message
   }
 }
 
@@ -233,13 +246,14 @@ watch([runId, () => props.open, runLive], async () => {
     diff.value = ''
     return
   }
+  errors.run = ''
   try {
     const [list, d] = await Promise.all([apiFetch(`/api/runs/${id}/files`), apiFetch(`/api/runs/${id}/diff`)])
     if (id !== runId.value) return // another run was picked meanwhile
     changed.value = list
     diff.value = d.diff
   } catch (e) {
-    if (id === runId.value) error.value = e.message
+    if (id === runId.value) errors.run = e.message
   }
 })
 

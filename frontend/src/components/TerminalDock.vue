@@ -154,7 +154,13 @@ function adoptStyles(root) {
     }
   }
   sync()
-  const watcher = new MutationObserver(sync)
+  // xterm rewrites its rows on every output chunk; only a change to a <style>
+  // element (a new one, or new text in one) needs the sheets synced.
+  const isStyle = node => node?.nodeName === 'STYLE'
+  const touchesStyle = r => isStyle(r.target) || isStyle(r.target.parentNode) || [...r.addedNodes].some(isStyle)
+  const watcher = new MutationObserver(records => {
+    if (records.some(touchesStyle)) sync()
+  })
   watcher.observe(root, { subtree: true, childList: true, characterData: true })
   return () => {
     watcher.disconnect()

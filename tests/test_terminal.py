@@ -123,8 +123,8 @@ def test_output_tail_is_capped(procs, monkeypatch):
 
 
 def test_run_command_on_this_machine_uses_the_shell_without_secrets(procs, tmp_path, monkeypatch):
-    monkeypatch.setenv("JULI_TOKEN", "secret-session-token")
-    monkeypatch.setenv("OPENAI_API_KEY", "not-a-real-key-1234")
+    monkeypatch.setenv("JULI_TOKEN", "t")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
     procs.handler = lambda argv: (b"ok\n", 0)
     result = terminal.run_command("pytest -q && echo hi", tmp_path, SANDBOX, sandboxed=False)
     assert (result.status, result.sandbox) == ("passed", False)
@@ -159,7 +159,7 @@ def test_command_not_found_is_an_error_not_a_failure(procs, tmp_path):
 
 
 def test_pty_session_reads_writes_and_closes(ptys, tmp_path, monkeypatch):
-    monkeypatch.setenv("JULI_TOKEN", "secret-session-token")
+    monkeypatch.setenv("JULI_TOKEN", "t")
     session = terminal.PtySession(tmp_path, 100, 30)
     (pty,) = ptys
     assert pty.cwd == str(tmp_path) and pty.size == (30, 100) and "JULI_TOKEN" not in pty.env

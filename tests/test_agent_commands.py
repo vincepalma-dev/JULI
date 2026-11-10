@@ -81,7 +81,7 @@ def test_runs_without_a_workspace_skip_files_and_commands(models, bus, procs):
 
 
 def test_commands_ask_first_when_the_sandbox_is_off(models, bus, project, procs, monkeypatch):
-    monkeypatch.setenv("JULI_TOKEN", "secret-session-token")
+    monkeypatch.setenv("JULI_TOKEN", "t")
     procs.handler = lambda argv: (b"1 passed\n", 0)
     run = start(bus, project)
     thread, results = run_in_thread(run)

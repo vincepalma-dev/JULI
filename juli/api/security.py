@@ -67,6 +67,10 @@ async def security_headers(request: Request, call_next: Callable[[Request], Awai
 WINDOW_SECONDS = 60.0
 MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 
+# New terminals per client per minute. WebSockets bypass the HTTP middleware,
+# so /ws/terminal checks this itself.
+TERMINAL_LIMIT = 10
+
 
 def route_group(method: str, path: str) -> tuple[str, int] | None:
     """(group, limit per minute) for a request, or None if it isn't limited."""
@@ -74,8 +78,12 @@ def route_group(method: str, path: str) -> tuple[str, int] | None:
         return None
     if method == "POST" and path == "/api/task":
         return "task", 10
+    if method == "POST" and path.startswith("/api/runs/") and path.endswith("/resume"):
+        return "task", 10
     if method == "POST" and path.startswith("/api/runs/") and path.endswith("/chat"):
         return "chat", 30
+    if method == "POST" and path.startswith("/api/runs/") and path.endswith(("/commit", "/push")):
+        return "git", 10
     if path.startswith("/api/settings/keys") or path.startswith("/api/providers/endpoints"):
         return "keys", 10
     return "mutate", 60

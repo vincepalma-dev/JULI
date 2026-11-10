@@ -1,4 +1,5 @@
 import json
+import queue
 import threading
 import types
 from pathlib import Path
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 from keyring.backend import KeyringBackend
 from keyring.errors import PasswordDeleteError
 
-from juli import config, keystore, providers
+from juli import config, keystore, providers, terminal
 from juli.api.app import create_app
 from juli.bus import AgentMessage, message_bus
 from juli.local import hardware, ollama
@@ -184,3 +185,122 @@ def fresh_pulls(monkeypatch):
     jobs = ollama.PullJobs()
     monkeypatch.setattr(ollama, "PULLS", jobs)
     return jobs
+
+
+# ─── Processes and PTYs ──────────────────────────────────────
+
+
+class FakeProc:
+    """A process that prints `output`, then exits with `code`. With `block`,
+    it keeps running after its output until killed."""
+
+    def __init__(self, argv, output: bytes = b"", code: int = 0, block: bool = False) -> None:
+        self.argv, self.pid, self.returncode = argv, 4242, None
+        self.code, self.killed = code, False
+        self._lines = output.splitlines(keepends=True)
+        self._gone = threading.Event()
+        if not block:
+            self._gone.set()
+        self.stdout = self
+
+    def readline(self) -> bytes:
+        if self._lines:
+            return self._lines.pop(0)
+        self._gone.wait(5)
+        return b""
+
+    def wait(self) -> int:
+        self.returncode = -9 if self.killed else self.code
+        return self.returncode
+
+    def kill(self) -> None:
+        self.killed = True
+        self._gone.set()
+
+
+class FakeProcesses:
+    """Stands in for terminal.POPEN. `handler(argv)` returns a FakeProc or
+    (output, exit code). With no handler, starting anything fails as if the
+    program weren't installed, so no test runs a real command or Docker."""
+
+    def __init__(self) -> None:
+        self.handler = None
+        self.calls: list[tuple] = []
+
+    def __call__(self, argv, **kwargs):
+        self.calls.append((argv, kwargs))
+        if self.handler is None:
+            raise FileNotFoundError(2, "processes disabled in tests")
+        result = self.handler(argv)
+        return result if isinstance(result, FakeProc) else FakeProc(argv, *result)
+
+    def argvs(self, skip_docker_checks: bool = True) -> list:
+        """Every argv started, without `docker version` checks."""
+        return [a for a, _ in self.calls if not (skip_docker_checks and isinstance(a, list) and a[:2] == ["docker", "version"])]
+
+
+def docker_up(then=None):
+    """A handler where `docker version` answers; everything else goes to `then` (default: exit 0)."""
+
+    def handler(argv):
+        if isinstance(argv, list) and argv[:2] == ["docker", "version"]:
+            return b"29.9.2\n", 0
+        return then(argv) if then else (b"ok\n", 0)
+
+    return handler
+
+
+@pytest.fixture(autouse=True)
+def procs(monkeypatch):
+    fake = FakeProcesses()
+    monkeypatch.setattr(terminal, "POPEN", fake)
+    return fake
+
+
+class FakePty:
+    """A PTY whose shell greets, echoes every input, and exits on "exit\\r"."""
+
+    def __init__(self, argv, cwd, env, rows, cols) -> None:
+        self.argv, self.cwd, self.env, self.size = argv, cwd, env, (rows, cols)
+        self.written: list[str] = []
+        self.out: queue.Queue = queue.Queue()
+        self.alive = True
+        self.out.put("PS> ")
+
+    def read(self, size):
+        item = self.out.get(timeout=10)
+        if item is None:
+            self.alive = False
+            raise EOFError
+        return item
+
+    def write(self, data):
+        self.written.append(data)
+        self.out.put(f"echo:{data}")
+        if data == "exit\r":
+            self.out.put(None)
+
+    def setwinsize(self, rows, cols):
+        self.size = (rows, cols)
+
+    def isalive(self):
+        return self.alive
+
+    def terminate(self, force=False):
+        if self.alive:
+            self.alive = False
+            self.out.put(None)
+
+
+@pytest.fixture(autouse=True)
+def ptys(monkeypatch):
+    """Started fake PTYs. No test spawns a real shell."""
+    started: list[FakePty] = []
+
+    def spawn(*args):
+        pty = FakePty(*args)
+        started.append(pty)
+        return pty
+
+    monkeypatch.setattr(terminal, "SPAWN", spawn)
+    return started

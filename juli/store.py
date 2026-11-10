@@ -1,8 +1,9 @@
 """
-SQLite store (WAL): projects, runs, messages, benchmarks.
+SQLite store (WAL): projects, runs, messages, benchmarks, run_files.
 
 Each task gets its own run row, so history is never deleted when a new task
-starts. Deleting a project cascades to its runs and messages.
+starts. Deleting a project cascades to its runs and messages. A running run
+keeps a checkpoint (JSON) in its row, so it can resume after a restart.
 """
 
 import sqlite3
@@ -39,6 +40,18 @@ _MESSAGE_COLUMNS = {
     "tokens_out": "INTEGER",
     "cost_usd": "REAL",
 }
+
+# Columns added to `runs` after the first schema.
+_RUN_COLUMNS = {
+    "checkpoint": "TEXT",  # the engine's run state after its latest step; NULL once complete or stopped
+}
+
+# Every runs column but the (large) checkpoint.
+RUN_FIELDS = "id, project_id, prompt, mode, status, crew_json, tokens_in, tokens_out, cost_usd, started_at, ended_at"
+
+# Runs with a checkpoint in these states can resume: interrupted (still
+# "running" or "paused" after a restart) or ended by an error.
+RESUMABLE = ("running", "paused", "error")
 
 
 def init_db() -> None:
@@ -77,10 +90,22 @@ def init_db() -> None:
                 message_type TEXT NOT NULL
             )
         """)
-        existing = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
-        for column, decl in _MESSAGE_COLUMNS.items():
-            if column not in existing:
-                conn.execute(f"ALTER TABLE messages ADD COLUMN {column} {decl}")
+        for table, columns in (("messages", _MESSAGE_COLUMNS), ("runs", _RUN_COLUMNS)):
+            existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+            for column, decl in columns.items():
+                if column not in existing:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        # The files each run wrote in its project's workspace, with their
+        # content before the run first touched them (NULL: the run created it).
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS run_files (
+                run_id INTEGER NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+                path TEXT NOT NULL,
+                before_text TEXT,
+                after_text TEXT NOT NULL,
+                PRIMARY KEY (run_id, path)
+            )
+        """)
         # The latest measured speed of each model on each machine.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS benchmarks (
@@ -167,17 +192,49 @@ def create_run(project_id: str, prompt: str, mode: str, crew_json: str | None = 
 
 
 def finish_run(run_id: int, status: str, tokens_in: int = 0, tokens_out: int = 0, cost_usd: float = 0.0) -> None:
+    """End a run. Its checkpoint is kept only if it can still resume (an error)."""
     with connect() as conn:
         conn.execute(
-            "UPDATE runs SET status = ?, tokens_in = ?, tokens_out = ?, cost_usd = ?, ended_at = ? WHERE id = ?",
-            (status, tokens_in, tokens_out, cost_usd, now(), run_id),
+            "UPDATE runs SET status = ?, tokens_in = ?, tokens_out = ?, cost_usd = ?, ended_at = ?, "
+            "checkpoint = CASE WHEN ? IN ('complete', 'stopped') THEN NULL ELSE checkpoint END WHERE id = ?",
+            (status, tokens_in, tokens_out, cost_usd, now(), status, run_id),
         )
 
 
 def get_run(run_id: int) -> dict | None:
     with connect() as conn:
-        row = conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        row = conn.execute(f"SELECT {RUN_FIELDS} FROM runs WHERE id = ?", (run_id,)).fetchone()
         return dict(row) if row else None
+
+
+def save_checkpoint(run_id: int, checkpoint: str, status: str) -> None:
+    """Store a running or paused run's state after a step."""
+    with connect() as conn:
+        conn.execute("UPDATE runs SET checkpoint = ?, status = ? WHERE id = ?", (checkpoint, status, run_id))
+
+
+def get_checkpoint(run_id: int) -> str | None:
+    with connect() as conn:
+        row = conn.execute("SELECT checkpoint FROM runs WHERE id = ?", (run_id,)).fetchone()
+        return row["checkpoint"] if row else None
+
+
+def reopen_run(run_id: int) -> None:
+    """Mark a resumed run as running again."""
+    with connect() as conn:
+        conn.execute("UPDATE runs SET status = 'running', ended_at = NULL WHERE id = ?", (run_id,))
+
+
+def resumable_runs(project_id: str | None = None) -> list[dict]:
+    """Runs that stopped mid-way (a restart or an error) and kept a checkpoint, newest first."""
+    marks = ", ".join("?" * len(RESUMABLE))
+    sql = f"SELECT {RUN_FIELDS} FROM runs WHERE checkpoint IS NOT NULL AND status IN ({marks})"
+    params: list = list(RESUMABLE)
+    if project_id is not None:
+        sql += " AND project_id = ?"
+        params.append(project_id)
+    with connect() as conn:
+        return [dict(row) for row in conn.execute(sql + " ORDER BY id DESC", params).fetchall()]
 
 
 def run_messages(run_id: int) -> list[dict]:
@@ -191,7 +248,27 @@ def run_messages(run_id: int) -> list[dict]:
 
 def get_runs(project_id: str) -> list[dict]:
     with connect() as conn:
-        rows = conn.execute("SELECT * FROM runs WHERE project_id = ? ORDER BY id ASC", (project_id,)).fetchall()
+        rows = conn.execute(f"SELECT {RUN_FIELDS} FROM runs WHERE project_id = ? ORDER BY id ASC", (project_id,)).fetchall()
+        return [dict(row) for row in rows]
+
+
+# ─── Workspace files ─────────────────────────────────────────
+
+
+def record_file(run_id: int, path: str, before: str | None, after: str) -> None:
+    """Note that a run wrote a file. The first before-image a run records is kept."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO run_files (run_id, path, before_text, after_text) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(run_id, path) DO UPDATE SET after_text = excluded.after_text",
+            (run_id, path, before, after),
+        )
+
+
+def run_files(run_id: int) -> list[dict]:
+    """The files a run wrote: path, before_text (None if it created the file), after_text."""
+    with connect() as conn:
+        rows = conn.execute("SELECT path, before_text, after_text FROM run_files WHERE run_id = ? ORDER BY path", (run_id,)).fetchall()
         return [dict(row) for row in rows]
 
 

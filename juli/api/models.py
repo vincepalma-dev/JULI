@@ -51,7 +51,7 @@ UserMessage = Annotated[str, StringConstraints(min_length=1, max_length=4000)]
 class Decision(Strict):
     """The answer to a paused run's decision event."""
 
-    action: Literal["approve", "revise", "switch", "stop"]
+    action: Literal["approve", "revise", "switch", "stop", "deny"]  # deny: an agent command
     model: ModelRef | None = None  # for switch
     message: UserMessage | None = None  # for revise: what to change in the plan
 
@@ -105,6 +105,29 @@ class RunSettings(Strict):
     fallback_model: ModelRef | None = None
     discussion_rounds: int = Field(default=0, ge=0, le=4)
     allowances: dict[ProviderId, Annotated[float, Field(gt=0, le=10_000)]] = {}
+
+
+class ResumeRequest(Strict):
+    ignore_allowance: bool = False
+
+
+# A Docker image reference, e.g. python:3.12-slim or ghcr.io/owner/image:tag.
+DockerImage = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._/-]{0,199}(?::[A-Za-z0-9_.-]{1,128})?(?:@sha256:[a-f0-9]{64})?$")]
+
+
+class SandboxSettings(Strict):
+    """The Docker sandbox for agent commands: only the workspace mounted, no network."""
+
+    enabled: bool = False
+    image: DockerImage = "python:3.12-slim"
+    timeout: int = Field(default=120, ge=5, le=3600)  # seconds per command
+
+
+class PushRequest(Strict):
+    """Push a run's branch. Without confirm, nothing is pushed: the reply says what would be."""
+
+    remote: str | None = Field(default=None, min_length=1, max_length=300)
+    confirm: bool = False
 
 
 class ModeRequest(Strict):

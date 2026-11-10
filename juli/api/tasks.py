@@ -1,5 +1,6 @@
-"""Task routes: start, stop, steer and answer a task; follow-up chat; status and the live view."""
+"""Task routes: start, stop, steer, answer and resume a task; follow-up chat; status and the live view."""
 
+import json
 import logging
 import threading
 
@@ -11,11 +12,12 @@ from juli.api.models import (
     AgentMessageResponse,
     Decision,
     FollowUp,
+    ResumeRequest,
     TaskNote,
     TaskRequest,
     TaskStatusResponse,
 )
-from juli.bus import message_bus
+from juli.bus import BUSY, message_bus
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -30,6 +32,14 @@ def _run(engine, run, run_id: int) -> None:
         message_bus.set_task_status("error")
     finally:
         store.finish_run(run_id, result.status, result.tokens_in, result.tokens_out, result.cost_usd)
+
+
+def _allowance_notices(engine, run, settings: dict, ignore_allowance: bool) -> None:
+    """Refuse a run on a used-up monthly allowance (unless ignored); otherwise warn in the run."""
+    warnings, blocked = engine.allowance_report(run.agents, settings)
+    if blocked and not ignore_allowance:
+        raise HTTPException(409, "Monthly allowance reached: " + "; ".join(blocked) + ". Start with ignore_allowance to continue.")
+    run.notices = warnings + blocked
 
 
 @router.post("/task", status_code=202)
@@ -52,16 +62,44 @@ def start_task(request: TaskRequest) -> dict:
         no_devops=request.no_devops,
         review_source=engine.review_source(request.project_id) if request.mode == "review" else "",
     )
-    warnings, blocked = engine.allowance_report(run.agents, settings)
-    if blocked and not request.ignore_allowance:
-        raise HTTPException(409, "Monthly allowance reached: " + "; ".join(blocked) + ". Start with ignore_allowance to continue.")
-    run.notices = warnings + blocked
+    _allowance_notices(engine, run, settings, request.ignore_allowance)
 
     run_id = engine.begin(request.project_id, run)
     if run_id is None:
         raise HTTPException(409, "A task is already running")
     threading.Thread(target=_run, args=(engine, run, run_id), daemon=True).start()
     return {"status": "started", "run_id": run_id, "mode": request.mode}
+
+
+@router.get("/runs/resumable")
+def resumable_runs(project_id: str | None = None) -> list[dict]:
+    """Runs a restart, crash or error cut short, which can pick up from their checkpoint."""
+    active = message_bus.active_run_id if message_bus.task_status in BUSY else None
+    return [r for r in store.resumable_runs(project_id) if r["id"] != active]
+
+
+@router.post("/runs/{run_id}/resume", status_code=202)
+def resume_run(run_id: int, body: ResumeRequest | None = None) -> dict:
+    """Resume a run from its checkpoint: finished steps replay without model
+    calls or commands, then the run continues live."""
+    from juli import engine
+
+    run_row = store.get_run(run_id)
+    if not run_row:
+        raise HTTPException(404, "Run not found")
+    checkpoint = store.get_checkpoint(run_id)
+    if not checkpoint or run_row["status"] not in store.RESUMABLE:
+        raise HTTPException(409, "This run has no checkpoint to resume from")
+    settings = config.load_settings()
+    try:
+        run = engine.Run.from_checkpoint(json.loads(checkpoint), settings=settings)
+    except (ValueError, KeyError, TypeError) as e:
+        raise HTTPException(409, f"The checkpoint can't be used: {e}") from None
+    _allowance_notices(engine, run, settings, bool(body and body.ignore_allowance))
+    if engine.begin(run_row["project_id"], run, run_id=run_id) is None:
+        raise HTTPException(409, "A task is already running")
+    threading.Thread(target=_run, args=(engine, run, run_id), daemon=True).start()
+    return {"status": "resumed", "run_id": run_id}
 
 
 @router.post("/task/stop")

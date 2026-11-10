@@ -10,6 +10,15 @@ send notes mid-run that every later agent sees. A run can pause for a
 decision (plan approval, or a key that is missing, invalid or out of credit)
 and can be stopped at any time. The API reaches the active run through
 stop(), decide() and say(). follow_up() answers questions about a finished run.
+
+Files in the coder's, tester's, docs' and custom roles' replies land in the
+project's workspace. Commands in ```bash run blocks run there (asking first
+unless the sandbox makes that unnecessary); a failure goes back to the coder
+for one fix pass.
+
+After every step (a turn, a decision, a command) the run saves a
+checkpoint. A resumed run replays the saved steps without calling any model
+or running any command, then continues live.
 """
 
 import json
@@ -18,10 +27,12 @@ import math
 import queue
 import re
 import threading
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timezone
+from pathlib import Path
 
-from juli import providers, roles, store
+from juli import providers, roles, store, terminal, workspace
 from juli.bus import AgentMessage, MessageBus, message_bus
 
 log = logging.getLogger(__name__)
@@ -35,6 +46,19 @@ MODE_ROLES = {
     "code": ("planner", "coder", "reviewer"),
     "plan": ("planner", "docs"),
     "review": ("reviewer",),
+}
+
+# Turns whose fenced blocks with a path are written to the workspace (by role or protocol).
+WRITES_FILES = ("coder", "tester", "docs", "custom", "fix")
+MAX_COMMANDS_PER_TURN = 5
+CHECKPOINT_VERSION = 1
+
+COMMAND_STATUS = {
+    "passed": "Passed",
+    "failed": "Failed",
+    "timeout": "Timed out",
+    "error": "Didn't run",
+    "denied": "Denied",
 }
 
 
@@ -120,8 +144,18 @@ def allowance_report(agents: list[Agent], settings: dict) -> tuple[list[str], li
 
 
 def review_source(project_id: str) -> str:
-    """The latest run's output in a project, as text for the reviewer."""
+    """What review mode reviews: the workspace's files, or else the latest run's output."""
+    files = workspace.review_text(project_id)
+    if files:
+        return files
     return "\n\n".join(f"### {m['agent_name']}\n\n{m['content']}" for m in store.latest_output(project_id))
+
+
+def _command_report(result: terminal.CommandResult) -> str:
+    status = COMMAND_STATUS.get(result.status, result.status)
+    if result.exit_code is not None and result.status == "failed":
+        status += f" (exit code {result.exit_code})"
+    return f"$ {result.command}\n{status}\n\n{result.output}".rstrip()
 
 
 def _tokens(chars: int) -> int:
@@ -168,6 +202,7 @@ class Run:
     ) -> None:
         cfg = settings.get("run") or {}
         self.prompt, self.mode, self.bus = prompt, mode, bus
+        self.crew, self.no_devops = crew, no_devops
         self.steps = cast(crew, mode, no_devops)
         self.agents = [a for step in self.steps.values() for a in step]
         self.max_cycles, self.approve_plan = max_cycles, approve_plan
@@ -190,6 +225,26 @@ class Run:
         self._warned: set[str] = set()
         self._notes: list[str] = []  # the user's mid-run messages
 
+        # The workspace, set by attach() once the run has a row.
+        self.sandbox = terminal.sandbox_settings(settings)
+        self.project_id: str | None = None
+        self.run_id: int | None = None
+        self.workspace: Path | None = None
+        self._sandbox_checked = False
+        self._sandbox_off: str | None = None
+
+        # Checkpointing: the steps done so far, and those still to replay when resuming.
+        self.on_checkpoint: Callable[[dict, str], None] | None = None
+        self.resumed = False
+        self._steps: list[dict] = []
+        self._replay: list[dict] = []
+
+    def attach(self, project_id: str, run_id: int, on_checkpoint: Callable[[dict, str], None] | None = None) -> None:
+        """Tie the run to its row: files go to the project's workspace, checkpoints to `on_checkpoint`."""
+        self.project_id, self.run_id = project_id, run_id
+        self.workspace = workspace.root(project_id)
+        self.on_checkpoint = on_checkpoint
+
     # ─── Control (any thread) ────────────────────────────────
 
     def stop(self) -> None:
@@ -199,7 +254,7 @@ class Run:
         """A note from the user. Every later turn sees all notes so far."""
         with self._lock:
             self._notes.append(content)
-        self._publish("You", content, "user")
+        self.bus.publish(AgentMessage(agent_name="You", content=content, message_type="user"))
 
     def decide(self, action: str, model: str | None = None, message: str | None = None) -> str | None:
         """Answer the pending decision. Returns an error message, or None if accepted."""
@@ -238,7 +293,12 @@ class Run:
     def execute(self) -> RunResult:
         status = "complete"
         try:
+            # Preflight speaks even when resuming; the replayed steps stay quiet.
+            replay, self._replay = self._replay, []
+            if self.resumed:
+                self._publish("System", f"Resuming from the checkpoint: {len(replay)} step(s) already done.", "system")
             self._preflight()
+            self._replay = replay
             self._pipeline()
         except Stopped as e:
             status = "stopped"
@@ -299,6 +359,7 @@ class Run:
         tests = ""
         for agent in step["tester"][:1]:
             tests = self._turn(agent, _brief(("Task", self.prompt), ("Code", code)))
+            tests = self._build(agent, tests, ("Code", code), ("Tests", tests))
         for agent in step["docs"][:1]:
             self._turn(agent, _brief(("Task", self.prompt), ("Plan", plan), ("Code", code), ("Tests", tests), *extras))
 
@@ -316,6 +377,7 @@ class Run:
                     ("Review feedback to address", feedback),
                 ),
             )
+            code = self._build(coder, code, ("Your code", code))
             if reviewer is None:
                 break
             review = self._turn(reviewer, _brief(("Task", self.prompt), ("Plan", plan), ("Code to review", code)))
@@ -372,6 +434,10 @@ class Run:
 
     def _turn(self, agent: Agent, brief: str, protocol: str | None = None) -> str:
         """One agent turn. `protocol` picks reply instructions other than the role's own."""
+        done = self._replayed("turn", agent.name)
+        if done is not None:
+            agent.model = done["model"]  # the model it ended on, after any switch
+            return done["text"]
         instructions = roles.PROTOCOL.get(protocol or agent.role)
         system = agent.prompt + (f"\n\n{instructions}" if instructions else "")
         with self._lock:
@@ -390,11 +456,122 @@ class Run:
                 data={"role": agent.role, "activity": activity},
             )
             try:
-                return self._call(agent, messages)
+                text = self._call(agent, messages)
+                break
             except providers.ProviderError as e:
                 if not (e.problem and e.problem.kind in providers.PAUSING):
                     raise
                 self._replace_model(agent, e)
+        if (protocol or agent.role) in WRITES_FILES:
+            self._write_files(agent, text)
+        self._steps.append({"kind": "turn", "agent": agent.name, "model": agent.model, "text": text})
+        self._save()
+        return text
+
+    # ─── Workspace and commands ──────────────────────────────
+
+    def _write_files(self, agent: Agent, text: str) -> None:
+        """Write the turn's path-labelled blocks to the workspace."""
+        if self.project_id is None or self.run_id is None:
+            return
+        files = workspace.extract_files(text)
+        if not files:
+            return
+        try:
+            written, refused = workspace.write_files(self.project_id, self.run_id, files)
+        except OSError as e:
+            self._publish("System", f"{agent.name}'s files couldn't be written: {e.strerror or e}", "error")
+            return
+        if written:
+            self._publish(
+                agent.name,
+                f"{agent.name} wrote {len(written)} file(s): {', '.join(written)}",
+                "files",
+                data={"paths": written},
+            )
+        for rel, why in refused:
+            self._publish("System", f"Skipped {rel[:120]!r} from {agent.name}: {why}.", "warning")
+
+    def _build(self, agent: Agent, text: str, *context: tuple[str, str]) -> str:
+        """Run the commands a turn proposed. If any fails, the coder gets one fix
+        pass and the failed commands run once more. Returns the text plus the fix."""
+        if self.workspace is None:
+            return text
+        commands = workspace.extract_commands(text)
+        if len(commands) > MAX_COMMANDS_PER_TURN:
+            self._publish("System", f"{agent.name} proposed {len(commands)} commands; only the first {MAX_COMMANDS_PER_TURN} run.", "warning")
+        results = [self._command(agent.name, c) for c in commands[:MAX_COMMANDS_PER_TURN]]
+        failed = [r for r in results if r.status in ("failed", "timeout")]
+        coder = self.steps["coder"][0] if self.steps.get("coder") else None
+        if not failed or coder is None:
+            return text
+        report = "\n\n".join(_command_report(r) for r in failed)
+        fix = self._turn(coder, _brief(("Task", self.prompt), *context, ("Failed commands", report)), protocol="fix")
+        for r in failed:
+            self._command(coder.name, r.command)
+        return f"{text}\n\n{fix}"
+
+    def _sandbox_state(self) -> str | None:
+        """Why the sandbox is off for this run, or None if it's on. Checked once per run."""
+        if not self._sandbox_checked:
+            self._sandbox_checked = True
+            self._sandbox_off = terminal.sandbox_problem(self.sandbox)
+            if self._sandbox_off and self.sandbox.get("enabled"):
+                self._warn("sandbox", f"Agent commands will ask first: {self._sandbox_off}.")
+        return self._sandbox_off
+
+    def _command(self, agent_name: str, command: str) -> terminal.CommandResult:
+        """Run one agent command, asking first unless it may run on its own."""
+        done = self._replayed("command")
+        if done is not None:
+            return terminal.CommandResult(**done["result"])
+        assert self.project_id is not None and self.workspace is not None
+        if len(command) > terminal.MAX_COMMAND_CHARS:
+            self._publish("System", f"Skipped a command from {agent_name}: it's over {terminal.MAX_COMMAND_CHARS} characters.", "warning")
+            return self._log_command(terminal.CommandResult(command[:200], "denied"))
+        off = self._sandbox_state()
+        reason = terminal.approval_reason(command, off)
+        if reason:
+            where = "in the Docker sandbox" if off is None else "on this machine, outside any sandbox"
+            choice = self._ask(
+                f"{agent_name} wants to run this command {where} ({reason}). Approve or deny it.\n\n{command}",
+                {"kind": "command_approval", "agent": agent_name, "command": command, "sandbox": off is None, "reason": reason},
+                ["approve", "deny"],
+                record=False,  # the command step records the answer
+            )
+            if choice["action"] != "approve":
+                result = terminal.CommandResult(command, "denied", sandbox=off is None)
+                self._publish(agent_name, _command_report(result), "command", data=asdict(result))
+                return self._log_command(result)
+
+        workspace.ensure(self.project_id)
+        self._publish(agent_name, command, "command_start", data={"command": command, "sandbox": off is None})
+        try:
+            result = terminal.run_command(
+                command,
+                self.workspace,
+                self.sandbox,
+                sandboxed=off is None,
+                direct=reason is None,
+                cancel=self.cancel,
+                on_output=lambda text: self._publish(agent_name, text, "command_output", data={"command": command}),
+            )
+        except ValueError as e:
+            result = terminal.CommandResult(command, "error", output=str(e), sandbox=off is None)
+        if result.status == "stopped":
+            raise Stopped("stopped by the user")
+        self._publish(agent_name, _command_report(result), "command", data=asdict(result))
+        if result.status == "error" and result.sandbox and result.exit_code in (126, 127):
+            self._warn(
+                f"image:{command.split()[0]}",
+                f"'{command.split()[0]}' isn't in the sandbox image {self.sandbox['image']}. Pick an image that has it.",
+            )
+        return self._log_command(result)
+
+    def _log_command(self, result: terminal.CommandResult) -> terminal.CommandResult:
+        self._steps.append({"kind": "command", "result": asdict(result)})
+        self._save()
+        return result
 
     def _call(self, agent: Agent, messages: list[dict]) -> str:
         if self.cancel.is_set():
@@ -508,20 +685,27 @@ class Run:
             f"{reason} Switch to another model and resume, or stop.",
             {"kind": "key_problem", "agent": agent.name, "model": agent.model, "problem": problem.kind},
             ["switch", "stop"],
+            record=False,  # the turn step records the model it ended on
         )
         if choice["action"] != "switch":
             raise Stopped("stopped at the paused decision")
         agent.model = choice["model"]
         self._publish("System", f"Resuming: {agent.name} now uses {agent.model}.", "system")
 
-    def _ask(self, content: str, data: dict, options: list[str]) -> dict:
-        """Pause until decide() answers (or the run is stopped)."""
+    def _ask(self, content: str, data: dict, options: list[str], record: bool = True) -> dict:
+        """Pause until decide() answers (or the run is stopped). With `record`,
+        the answer is a checkpoint step of its own."""
+        if record:
+            done = self._replayed("decision")
+            if done is not None:
+                return done["choice"]
         with self._lock:
             self._pending = {"options": options}
             while not self._decisions.empty():
                 self._decisions.get_nowait()
         self.bus.set_task_status("paused")
         self._publish("System", content, "decision", data={**data, "options": options})
+        self._save("paused")
         try:
             while True:
                 if self.cancel.is_set():
@@ -531,14 +715,81 @@ class Run:
                 except queue.Empty:
                     continue
                 self.bus.set_task_status("running")
-                return choice
+                break
         finally:
             with self._lock:
                 self._pending = None
+        if record:
+            self._steps.append({"kind": "decision", "choice": choice})
+        self._save()
+        return choice
+
+    # ─── Checkpoints ─────────────────────────────────────────
+
+    def checkpoint(self) -> dict:
+        """Everything needed to rebuild this run and replay its steps so far."""
+        with self._lock:
+            notes = list(self._notes)
+        return {
+            "version": CHECKPOINT_VERSION,
+            "prompt": self.prompt,
+            "mode": self.mode,
+            "crew": [asdict(a) for a in self.crew],
+            "options": {
+                "max_cycles": self.max_cycles,
+                "approve_plan": self.approve_plan,
+                "discussion_rounds": self.discussion_rounds,
+                "no_devops": self.no_devops,
+            },
+            "review_source": self.review_source,
+            "notes": notes,
+            "steps": list(self._steps),
+            "usage": {"tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "cost_usd": self.cost_usd},
+        }
+
+    @classmethod
+    def from_checkpoint(cls, state: dict, *, settings: dict, notices: list[str] | None = None, bus: MessageBus = message_bus) -> "Run":
+        """Rebuild a run from its checkpoint. Limits, Privacy Mode and endpoints
+        come from today's settings; the crew is the one the run started with."""
+        if state.get("version") != CHECKPOINT_VERSION:
+            raise ValueError("This checkpoint was saved by another version of JULI")
+        names = {f.name for f in fields(Agent)}
+        crew = [Agent(**{k: v for k, v in a.items() if k in names}) for a in state["crew"]]
+        options = {k: v for k, v in (state.get("options") or {}).items() if k in ("max_cycles", "approve_plan", "discussion_rounds", "no_devops")}
+        run = cls(state["prompt"], state["mode"], crew, settings=settings, review_source=state.get("review_source") or "", notices=notices or (), bus=bus, **options)
+        run._replay = list(state.get("steps") or [])
+        run._notes = list(state.get("notes") or [])
+        usage = state.get("usage") or {}
+        run.tokens_in, run.tokens_out = int(usage.get("tokens_in") or 0), int(usage.get("tokens_out") or 0)
+        run.cost_usd = float(usage.get("cost_usd") or 0.0)
+        run.resumed = True
+        return run
+
+    def _save(self, status: str = "running") -> None:
+        if self.on_checkpoint is None:
+            return
+        try:
+            self.on_checkpoint(self.checkpoint(), status)
+        except Exception:
+            log.exception("Could not save the run's checkpoint")
+
+    def _replayed(self, kind: str, agent: str | None = None) -> dict | None:
+        """The next saved step, when resuming and it is this kind of step."""
+        if not self._replay:
+            return None
+        step = self._replay[0]
+        if step.get("kind") != kind or (agent is not None and step.get("agent") != agent):
+            self._replay.clear()
+            self._publish("System", "The checkpoint doesn't match this run's next step; continuing live from here.", "warning")
+            return None
+        self._steps.append(self._replay.pop(0))
+        return step
 
     # ─── Events ──────────────────────────────────────────────
 
     def _publish(self, agent_name: str, content: str, message_type: str, **fields) -> None:
+        if self._replay:
+            return  # replaying a checkpoint: these messages went out the first time
         self.bus.publish(AgentMessage(agent_name=agent_name, content=content, message_type=message_type, **fields))
 
     def _warn(self, key: str, content: str) -> None:
@@ -553,18 +804,25 @@ _active: Run | None = None
 _active_lock = threading.Lock()
 
 
-def begin(project_id: str, run: Run) -> int | None:
-    """Claim the bus for a run and create its run row. None if a task is already running."""
+def begin(project_id: str, run: Run, run_id: int | None = None) -> int | None:
+    """Claim the bus for a run and create its run row (or reopen `run_id` to
+    resume it). None if a task is already running."""
     if not run.bus.try_begin_task(run.prompt, project_id):
         return None
     try:
-        crew_json = json.dumps([a.summary() for a in run.agents])
-        run_id = store.create_run(project_id, run.prompt, run.mode, crew_json)
+        if run_id is None:
+            crew_json = json.dumps([a.summary() for a in run.agents])
+            run_id = store.create_run(project_id, run.prompt, run.mode, crew_json)
+        else:
+            store.reopen_run(run_id)
     except Exception:
         run.bus.set_task_status("error")
         raise
-    run.bus.start_run(project_id, run_id)
-    return run_id
+    row_id = run_id
+    run.bus.start_run(project_id, row_id)
+    run.attach(project_id, row_id, lambda state, status: store.save_checkpoint(row_id, json.dumps(state), status))
+    run._save()  # a crash in the first turn can resume too
+    return row_id
 
 
 def execute(run: Run) -> RunResult:

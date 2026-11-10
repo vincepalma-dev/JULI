@@ -2,8 +2,9 @@
 JULI: FastAPI app factory.
 
 Run with `uvicorn --factory juli.api.app:create_app`. Every /api route except
-GET /api/health needs `Authorization: Bearer <token>`. The WebSocket at /ws
-needs an auth message first and an allowed Origin.
+GET /api/health needs `Authorization: Bearer <token>`. The WebSockets at /ws
+(live agent messages) and /ws/terminal (the IDE terminal) need an allowed
+Origin and the token in their first message.
 """
 
 import asyncio
@@ -14,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 
 from juli import __version__, config, store
-from juli.api import local, projects, providers, security, settings, tasks
+from juli.api import local, projects, providers, security, settings, tasks, workspace
 from juli.bus import AgentMessage, message_bus
 
 log = logging.getLogger(__name__)
@@ -44,6 +45,25 @@ class ConnectionManager:
                 self.disconnect(connection)
 
 
+async def greet(websocket: WebSocket) -> dict | None:
+    """Accept, check Origin, and read the first message, which must carry the
+    token within WS_AUTH_TIMEOUT. Returns it, or None once the socket is closed."""
+    # Accept before refusing, so browsers see the close code (a refused
+    # handshake surfaces only as 1006) and the client stops reconnecting.
+    await websocket.accept()
+    if not security.origin_allowed(websocket.headers.get("origin")):
+        await websocket.close(code=4403)
+        return None
+    try:
+        hello = await asyncio.wait_for(websocket.receive_json(), WS_AUTH_TIMEOUT)
+    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+        hello = None
+    if not (isinstance(hello, dict) and security.token_matches(websocket.app.state.token, hello.get("token"))):
+        await websocket.close(code=4401)
+        return None
+    return hello
+
+
 async def message_bridge(manager: ConnectionManager) -> None:
     """Forward bus messages to every connected WebSocket client."""
     queue = message_bus.subscribe_async()
@@ -62,6 +82,8 @@ async def lifespan(app: FastAPI):
     message_bus.set_persister(store.save_message)
     task = asyncio.create_task(message_bridge(app.state.connections))
     yield
+    for session in list(app.state.terminals):
+        session.close()
     task.cancel()
     try:
         await task
@@ -88,6 +110,7 @@ def create_app(token: str | None = None) -> FastAPI:
     app.state.token = token
     app.state.connections = ConnectionManager()
     app.state.limiter = security.RateLimiter()
+    app.state.terminals = set()  # open PTY sessions
 
     # The last middleware added runs first: headers wrap everything, 429s included.
     app.middleware("http")(app.state.limiter.middleware)
@@ -98,27 +121,16 @@ def create_app(token: str | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__}
 
     auth = [Depends(security.require_token)]
-    for module in (tasks, projects, settings, providers, local):
+    for module in (tasks, projects, settings, providers, local, workspace):
         app.include_router(module.router, prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         """Live agent messages. First message must be {"type":"auth","token":...}."""
-        # Accept before refusing, so browsers see the close code (a refused
-        # handshake surfaces only as 1006) and the client stops reconnecting.
-        await websocket.accept()
-        if not security.origin_allowed(websocket.headers.get("origin")):
-            await websocket.close(code=4403)
+        hello = await greet(websocket)
+        if hello is None:
             return
-        try:
-            hello = await asyncio.wait_for(websocket.receive_json(), WS_AUTH_TIMEOUT)
-        except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
-            hello = None
-        if not (
-            isinstance(hello, dict)
-            and hello.get("type") == "auth"
-            and security.token_matches(app.state.token, hello.get("token"))
-        ):
+        if hello.get("type") != "auth":
             await websocket.close(code=4401)
             return
 
@@ -140,5 +152,12 @@ def create_app(token: str | None = None) -> FastAPI:
             pass
         finally:
             manager.disconnect(websocket)
+
+    @app.websocket("/ws/terminal")
+    async def terminal_endpoint(websocket: WebSocket) -> None:
+        """The user's shell in a project's workspace. First message: {token, project_id, cols, rows}."""
+        hello = await greet(websocket)
+        if hello is not None:
+            await workspace.terminal_socket(websocket, hello)
 
     return app

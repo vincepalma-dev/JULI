@@ -22,6 +22,16 @@ DEFAULT_ALLOWED_ORIGINS = [
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
 
 
+def ui_csp(port: int) -> str:
+    """The CSP for the dashboard's HTML and assets when FastAPI serves them:
+    only its own scripts, styles, fonts and images, and its own WebSockets."""
+    sockets = " ".join(f"ws://{host}:{port}" for host in ("127.0.0.1", "localhost"))
+    return (
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+        f"connect-src 'self' {sockets}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    )
+
+
 def has_valid_token(request: Request) -> bool:
     header = request.headers.get("authorization", "")
     scheme, _, supplied = header.partition(" ")
@@ -56,7 +66,12 @@ async def security_headers(request: Request, call_next: Callable[[Request], Awai
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Content-Security-Policy"] = API_CSP
+    # The dashboard (when served here) gets its own CSP; /api and /ws keep the strict one.
+    ui: str | None = getattr(request.app.state, "ui_csp", None)
+    if ui and not request.url.path.startswith(("/api/", "/ws")):
+        response.headers["Content-Security-Policy"] = ui
+    else:
+        response.headers["Content-Security-Policy"] = API_CSP
     if request.url.scheme == "https":
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

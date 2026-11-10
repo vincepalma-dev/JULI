@@ -15,6 +15,7 @@ from juli.api.models import (
     ResumeRequest,
     TaskNote,
     TaskRequest,
+    TaskStatusEnum,
     TaskStatusResponse,
 )
 from juli.bus import BUSY, message_bus
@@ -161,9 +162,11 @@ def follow_up(run_id: int, body: FollowUp) -> dict:
 @router.get("/status", response_model=TaskStatusResponse)
 def get_status() -> TaskStatusResponse:
     return TaskStatusResponse(
-        status=message_bus.task_status,
+        status=TaskStatusEnum(message_bus.task_status),
         current_task=message_bus.current_task,
         message_count=len(message_bus.history),
+        project_id=message_bus.active_project_id,
+        run_id=message_bus.active_run_id,
     )
 
 

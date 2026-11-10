@@ -10,7 +10,10 @@ import json
 import os
 import queue
 import re
+import shutil
+import subprocess
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
@@ -347,6 +350,74 @@ def list_agents() -> None:
     for agent in engine.build_crew(config.load_settings()):
         table.add_row(agent.name, agent.role, agent.model, str(agent.max_tokens or ""))
     console.print(table)
+
+
+FRONTEND_DIR = config.ROOT_DIR / "frontend"
+
+
+def build_dashboard() -> None:
+    """npm run build in frontend/ (npm install first if needed)."""
+    npm = shutil.which("npm")
+    if not npm:
+        console.print("Node.js is needed to build the dashboard. Install it from https://nodejs.org", style="red")
+        raise typer.Exit(1)
+    try:
+        if not (FRONTEND_DIR / "node_modules").is_dir():
+            console.print("Installing the dashboard's packages...")
+            subprocess.run([npm, "install"], cwd=FRONTEND_DIR, check=True)
+        console.print("Building the dashboard...")
+        subprocess.run([npm, "run", "build"], cwd=FRONTEND_DIR, check=True)
+    except subprocess.CalledProcessError:
+        console.print("The dashboard build failed; see the output above.", style="red")
+        raise typer.Exit(1) from None
+
+
+@app.command("serve")
+def serve(
+    port: int = typer.Option(8000, "--port", min=1, max=65535, help="Port on 127.0.0.1"),
+    build: bool = typer.Option(False, "--build", help="Rebuild the dashboard first"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Don't open the dashboard"),
+    show_link: bool = typer.Option(False, "--show-link", help="Print the dashboard link, which holds the session token"),
+) -> None:
+    """Serve the dashboard and the API on one origin, http://127.0.0.1:<port>, and open it."""
+    import secrets
+    import webbrowser
+
+    import uvicorn
+
+    from juli.api.app import create_app
+
+    dist = FRONTEND_DIR / "dist"
+    if build or not (dist / "index.html").is_file():
+        build_dashboard()
+    origin = f"http://127.0.0.1:{port}"
+    # The dashboard's own origins must pass the WebSocket Origin check. The default
+    # allowlist covers ports 3000 and 8000; a list the user set is kept and extended.
+    existing = [o.strip() for o in os.environ.get("JULI_ALLOWED_ORIGINS", "").split(",") if o.strip()]
+    if existing or port != 8000:
+        served = [origin, f"http://localhost:{port}"]
+        os.environ["JULI_ALLOWED_ORIGINS"] = ",".join(dict.fromkeys(existing + served))
+    token = secrets.token_urlsafe(32)
+    link = f"{origin}/#token={token}"
+    server = uvicorn.Server(uvicorn.Config(create_app(token, static_dir=dist, port=port), host="127.0.0.1", port=port))
+
+    def open_when_up() -> None:
+        while not server.started and not server.should_exit:
+            time.sleep(0.1)
+        if not server.started:
+            return
+        # The link holds the session token, so it's only printed on request.
+        if show_link:
+            console.print("Dashboard link (keep it private, it holds your session token):")
+            console.print(link, markup=False, highlight=False, soft_wrap=True)
+        if not no_browser:
+            webbrowser.open(link)
+        elif not show_link:
+            console.print("JULI is running. Restart with --show-link to print the dashboard link.")
+
+    threading.Thread(target=open_when_up, daemon=True).start()
+    console.print(f"JULI on {origin} (Ctrl+C stops it)")
+    server.run()
 
 
 @app.command("voice")

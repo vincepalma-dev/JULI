@@ -77,8 +77,8 @@ def test_try_begin_task_is_exclusive():
 def test_activate_refused_while_another_project_runs():
     bus = MessageBus()
     assert bus.try_begin_task("t", "p1")
-    assert bus.set_active_project("p1", []) is True
-    assert bus.set_active_project("p2", []) is False
+    assert bus.set_active_project("p1") is True
+    assert bus.set_active_project("p2") is False
     assert bus.active_project_id == "p1"
 
 
@@ -91,6 +91,7 @@ def test_delete_is_atomic_with_task_start():
 
 def test_deleting_the_active_project_deactivates_it():
     bus = MessageBus()
-    bus.set_active_project("p1", [{"agent_name": "Coder", "content": "x"}])
+    bus.set_active_project("p1")
+    bus.publish(AgentMessage(agent_name="Coder", content="x"))
     assert bus.delete_project("p1", lambda pid: True) is True
     assert bus.active_project_id is None and bus.history == []

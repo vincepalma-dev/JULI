@@ -26,6 +26,8 @@ def list_providers() -> list[dict]:
                 "label": info.get("label", pid),
                 "kind": info.get("kind"),
                 "local": llm.is_local_url(info.get("base_url", "")),
+                "custom": pid in endpoints,  # an OpenAI-compatible endpoint the user added
+                "base_url": info.get("base_url", ""),
                 "needs_key": needs_key,
                 "key_hint": keystore.key_hint(keystore.get_key(pid)) if needs_key else "",
                 "models": [

@@ -5,7 +5,7 @@ providers exist. Responses show key hints ("••••abcd"), never keys.
 
 from fastapi import APIRouter, HTTPException, Response
 
-from juli import config, keystore
+from juli import config, keystore, roles
 from juli import providers as llm
 from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ModeRequest, ProviderId, RunSettings
 from juli.local import crew
@@ -28,8 +28,10 @@ def _require_known_provider(model: str, settings: dict) -> None:
 def get_settings() -> dict:
     settings = config.load_settings()
     in_use = [a.get("model") for a in settings["agents"].values() if isinstance(a, dict) and a.get("model")]
+    # Each agent with its effective role: older settings leave it to the name.
+    agents = {name: {**cfg, "role": roles.role_of(name, cfg)} for name, cfg in settings["agents"].items() if isinstance(cfg, dict)}
     return {
-        "agents": settings["agents"],
+        "agents": agents,
         "key_hints": {p: keystore.key_hint(keystore.get_key(p)) for p in settings["providers"]},
         "available_models": list(dict.fromkeys(llm.preset_refs() + settings["available_models"] + in_use)),
         "run": settings["run"],

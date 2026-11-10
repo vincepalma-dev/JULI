@@ -32,6 +32,14 @@ def fetch_project(project_id: str) -> dict:
     return _get_or_404(project_id)
 
 
+@router.get("/{project_id}/runs")
+def list_runs(project_id: str) -> list[dict]:
+    """The project's runs, oldest first, with their totals."""
+    if not store.project_exists(project_id):
+        raise HTTPException(404, "Project not found")
+    return store.get_runs(project_id)
+
+
 @router.delete("/{project_id}", status_code=204)
 def remove_project(project_id: str) -> Response:
     deleted = message_bus.delete_project(project_id, store.delete_project)
@@ -45,7 +53,8 @@ def remove_project(project_id: str) -> Response:
 @router.put("/{project_id}/activate")
 def activate_project(project_id: str) -> dict:
     """Make this the project the live view and new messages belong to."""
-    project = _get_or_404(project_id)
-    if not message_bus.set_active_project(project_id, project["messages"]):
+    if not store.project_exists(project_id):
+        raise HTTPException(404, "Project not found")
+    if not message_bus.set_active_project(project_id):
         raise HTTPException(409, "A task is running in another project")
     return {"status": "activated", "project_id": project_id}

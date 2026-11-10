@@ -11,6 +11,7 @@ import os
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 from juli import keystore, roles
 
@@ -24,7 +25,7 @@ LEGACY_SETTINGS_FILE = ROOT_DIR / "settings.json"
 DEFAULT_PROVIDERS = ["openai", "anthropic", "google"]
 
 # Optional run limits and switches. Empty (None) means no limit.
-DEFAULT_RUN = {
+DEFAULT_RUN: dict[str, Any] = {
     "budget_usd": None,
     "token_cap": None,
     "privacy_mode": False,

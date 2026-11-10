@@ -457,7 +457,7 @@ def test_paused_run_blocks_new_tasks():
     assert bus.try_begin_task("t", "p1")
     bus.set_task_status("paused")
     assert not bus.try_begin_task("t2", "p2")
-    assert bus.set_active_project("p2", []) is False
+    assert bus.set_active_project("p2") is False
 
 
 # ─── Crew discussion and the user's notes ────────────────────

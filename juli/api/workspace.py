@@ -233,8 +233,19 @@ async def terminal_socket(websocket: WebSocket, hello: dict) -> None:
         pass
     finally:
         closed.set()
+        # Close the PTY on a thread, started before anything else is awaited, and
+        # keep the session counted until it's gone. The discard runs when the close
+        # finishes, so a cleanup cut short by cancellation (the client left, the
+        # server is stopping) still closes the shell and still unregisters it.
+        closing = asyncio.ensure_future(asyncio.to_thread(session.close))
+        closing.add_done_callback(lambda _: state.terminals.discard(session))
         for task in tasks:
             task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await asyncio.to_thread(session.close)
-        state.terminals.discard(session)
+            # Retrieve each task's exception (e.g. the client's disconnect), so
+            # asyncio doesn't report it as never retrieved.
+            task.add_done_callback(lambda t: t.cancelled() or t.exception())
+        # asyncio.wait, not gather: on Python 3.10, a cancellation that arrives
+        # while awaiting gather loses its message, so the server (or a test
+        # client) can't tell it's the cancellation it asked for and lets it escape.
+        await asyncio.wait(tasks)
+        await asyncio.shield(closing)

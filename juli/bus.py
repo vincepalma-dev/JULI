@@ -42,6 +42,7 @@ class AgentMessage:
     tokens_out: int | None = None
     cost_usd: float | None = None
     data: dict | None = None  # structured details, e.g. a decision's options
+    run_id: int | None = None  # set by publish() to the run it belongs to
 
     def to_dict(self) -> dict:
         return {
@@ -54,6 +55,7 @@ class AgentMessage:
             "tokens_out": self.tokens_out,
             "cost_usd": self.cost_usd,
             "data": self.data,
+            "run_id": self.run_id,
         }
 
 
@@ -113,7 +115,7 @@ class MessageBus:
         return True
 
     def set_task_status(self, status: str, task: str | None = None) -> None:
-        """Update task status and broadcast it."""
+        """Update task status and broadcast it; data carries the status for clients."""
         self._task_status = status
         if task is not None:
             self._current_task = task
@@ -122,6 +124,7 @@ class MessageBus:
                 agent_name="System",
                 content=f"Task status: {status}" + (f" — {task}" if task else ""),
                 message_type="status",
+                data={"status": status},
             )
         )
 
@@ -129,11 +132,13 @@ class MessageBus:
         """Publish a message to all subscribers. Safe to call from any thread."""
         live_only = message.message_type in LIVE_ONLY
         with self._lock:
+            project_id, run_id = self.active_project_id, self.active_run_id
+            if message.run_id is None:
+                message.run_id = run_id
             if not live_only:
                 self._history.append(message)
             queues = list(self._async_queues)
             callbacks = list(self._sync_callbacks)
-            project_id, run_id = self.active_project_id, self.active_run_id
 
         if self._persister and project_id and message.message_type not in NOT_STORED:
             try:
@@ -178,24 +183,20 @@ class MessageBus:
         with self._lock:
             self._history.clear()
 
-    def set_active_project(self, project_id: str, messages: list[dict]) -> bool:
-        """Switch the active project and show its stored history.
+    def set_active_project(self, project_id: str) -> bool:
+        """Switch the active project. Switching to another project clears the
+        live view; clients read stored history from the store, not the bus.
 
         False if a task is running in another project. While a task runs in
         this project, nothing changes (its live view stays).
         """
-        loaded = []
-        for msg in messages:
-            try:
-                loaded.append(AgentMessage(**msg))
-            except TypeError:
-                pass
         with self._lock:
             if self._task_status in BUSY:
                 return self.active_project_id == project_id
+            if self.active_project_id != project_id:
+                self.active_run_id = None
+                self._history = []
             self.active_project_id = project_id
-            self.active_run_id = None
-            self._history = loaded
         return True
 
     def delete_project(self, project_id: str, delete: Callable[[str], bool]) -> bool | None:

@@ -16,7 +16,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -113,7 +113,7 @@ def is_local(ref: str, endpoints: Mapping[str, dict] | None = None) -> bool:
         info = provider_info(split_ref(ref)[0], endpoints)
     except ValueError:
         return False
-    return bool(info) and is_local_url(info["base_url"])
+    return info is not None and is_local_url(info["base_url"])
 
 
 def cost(ref: str, tokens_in: int, tokens_out: int, endpoints: Mapping[str, dict] | None = None) -> float | None:
@@ -297,7 +297,7 @@ def stream(
     num_ctx: int | None = None,
     cancel: threading.Event | None = None,
     endpoints: Mapping[str, dict] | None = None,
-) -> Iterator[str | Usage]:
+) -> Generator[str | Usage, None, None]:
     """Stream a chat reply: text deltas, then one Usage.
 
     Rate limits and overload are retried, honouring Retry-After, for at most
@@ -347,7 +347,7 @@ def _max_output(ref: str) -> int:
     return int(MODELS.get(ref, {}).get("max_output", DEFAULT_ANTHROPIC_MAX_OUTPUT))
 
 
-def _openai(provider, model, info, key, messages, max_tokens) -> Iterator[str | Usage]:
+def _openai(provider, model, info, key, messages, max_tokens) -> Generator[str | Usage, None, None]:
     kwargs: dict[str, Any] = {}
     if max_tokens:
         # OpenAI's own API wants max_completion_tokens; compatible APIs take max_tokens.
@@ -385,7 +385,7 @@ def _openai(provider, model, info, key, messages, max_tokens) -> Iterator[str | 
     yield Usage(tokens_in, tokens_out, None, low_quota_warnings(raw.headers))
 
 
-def _anthropic(provider, model, info, key, messages, max_tokens) -> Iterator[str | Usage]:
+def _anthropic(provider, model, info, key, messages, max_tokens) -> Generator[str | Usage, None, None]:
     system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
     turns = [m for m in messages if m["role"] != "system"]
     client = anthropic.Anthropic(
@@ -397,7 +397,7 @@ def _anthropic(provider, model, info, key, messages, max_tokens) -> Iterator[str
     )
     with client:
         try:
-            extra = {"system": system} if system else {}
+            extra: dict[str, Any] = {"system": system} if system else {}
             with client.messages.stream(model=model, max_tokens=max_tokens, messages=turns, **extra) as s:
                 headers = s.response.headers
                 yield from s.text_stream
@@ -412,7 +412,7 @@ def _anthropic(provider, model, info, key, messages, max_tokens) -> Iterator[str
     yield Usage(tokens_in, usage.output_tokens, None, low_quota_warnings(headers))
 
 
-def _ollama(provider, model, info, messages, max_tokens, num_ctx) -> Iterator[str | Usage]:
+def _ollama(provider, model, info, messages, max_tokens, num_ctx) -> Generator[str | Usage, None, None]:
     body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
     options = {k: v for k, v in (("num_ctx", num_ctx), ("num_predict", max_tokens)) if v}
     if options:
@@ -487,15 +487,15 @@ def check(provider: str, endpoints: Mapping[str, dict] | None = None, privacy: b
             with client:
                 client.models.list(limit=1)
         else:
-            client = openai.OpenAI(
+            oai = openai.OpenAI(
                 api_key=key or "not-needed",
                 base_url=info["base_url"],
                 max_retries=0,
                 timeout=CHECK_TIMEOUT,
                 http_client=_sdk_http_client(),
             )
-            with client:
-                result["models"] = sorted(m.id for m in client.models.list())
+            with oai:
+                result["models"] = sorted(m.id for m in oai.models.list())
     except (openai.APIStatusError, anthropic.APIStatusError) as e:
         kind = "anthropic" if info["kind"] == "anthropic" else info.get("errors", "openai")
         err = _status_error(provider, kind, e.status_code, e.body, e.response.headers, key)

@@ -2,6 +2,7 @@
   <canvas
     ref="canvas"
     class="fixed inset-0 pointer-events-none"
+    aria-hidden="true"
     style="z-index: 0;"
   ></canvas>
 </template>
@@ -11,6 +12,9 @@ import { ref, onMounted, onUnmounted } from 'vue'
 
 const canvas = ref(null)
 let animationId = null
+let onResize = null
+// With reduced motion, the particles are drawn once and stay still.
+const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 onMounted(() => {
   const ctx = canvas.value.getContext('2d')
@@ -93,16 +97,20 @@ onMounted(() => {
       if (p.y > height + 10) p.y = -10
     }
 
-    animationId = requestAnimationFrame(draw)
+    if (!still) animationId = requestAnimationFrame(draw)
   }
 
-  window.addEventListener('resize', resize)
+  onResize = () => {
+    resize()
+    if (still) draw()
+  }
+  window.addEventListener('resize', onResize)
   init()
   draw()
 })
 
 onUnmounted(() => {
   if (animationId) cancelAnimationFrame(animationId)
-  window.removeEventListener('resize', () => {})
+  if (onResize) window.removeEventListener('resize', onResize)
 })
 </script>

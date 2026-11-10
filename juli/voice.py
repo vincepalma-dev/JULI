@@ -39,7 +39,7 @@ def speak(text: str, agent_name: str = "System") -> None:
 
 def _speak_with_engine(text: str, engine: str, agent_name: str) -> None:
     if engine == "pyttsx3":
-        import pyttsx3
+        import pyttsx3  # type: ignore[import-not-found, import-untyped]  # optional voice package
 
         tts = pyttsx3.init()
         voices = tts.getProperty("voices")
@@ -66,7 +66,7 @@ def _speak_with_engine(text: str, engine: str, agent_name: str) -> None:
 def listen(timeout: int = 10, phrase_limit: int = 30) -> str | None:
     """Recognize one spoken prompt. Requires SpeechRecognition and pyaudio."""
     try:
-        import speech_recognition as sr
+        import speech_recognition as sr  # type: ignore[import-not-found, import-untyped]  # optional voice package
     except ImportError:
         print("Install speech recognition: pip install SpeechRecognition pyaudio")
         return None

@@ -1,5 +1,6 @@
 import json
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -216,7 +217,13 @@ def test_terminal_socket_runs_a_shell_in_the_workspace(client, pid, ptys):
     (pty,) = ptys
     assert pty.size == (40, 120)
     assert Path(pty.cwd).name == pid and Path(pty.cwd).parent.name == "workspace"
+    # The server cleans up after the client has gone: wait for it to close the
+    # PTY and unregister the session.
+    deadline = time.monotonic() + 5
+    while (client.app.state.terminals or pty.alive) and time.monotonic() < deadline:
+        time.sleep(0.01)
     assert client.app.state.terminals == set()
+    assert not pty.alive
 
 
 def test_terminal_socket_refusals(client, pid, monkeypatch):

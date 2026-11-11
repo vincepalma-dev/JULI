@@ -93,7 +93,8 @@ class CommandResult:
 
 def docker_argv(base: Path, command: str, cfg: dict, name: str, *, direct: bool) -> list[str]:
     """`docker run` for a command: the workspace is the only mount (its .git
-    read-only, or hidden if there's none), no network, no host variables."""
+    read-only, or hidden if there's none), no network, no host variables. A
+    missing image fails instead of being downloaded."""
     if "," in str(base):
         raise ValueError("The workspace path can't contain a comma for the Docker sandbox")
     git_dir = base / ".git"
@@ -102,6 +103,7 @@ def docker_argv(base: Path, command: str, cfg: dict, name: str, *, direct: bool)
     )
     argv = [
         "docker", "run", "--rm", "--name", name,
+        "--pull", "never",
         "--network", "none",
         "--cap-drop", "ALL",
         "--security-opt", "no-new-privileges",
@@ -295,7 +297,7 @@ class PtySession:
         try:
             self.pty = SPAWN(argv or default_shell(), str(cwd), env, rows, cols)
         except ImportError:
-            raise TerminalUnavailable("The terminal needs pywinpty (Windows) or ptyprocess: pip install -r requirements.txt") from None
+            raise TerminalUnavailable("The terminal needs pywinpty (Windows) or ptyprocess: pip install -e .") from None
         except OSError as e:
             raise TerminalUnavailable(f"The shell couldn't start: {e.strerror or e}") from None
         self._closed = False

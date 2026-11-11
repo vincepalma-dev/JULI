@@ -317,7 +317,7 @@ def test_ollama_stream_from_recorded_fixture(net):
     assert text == "Local reply"
     assert (usage.tokens_in, usage.tokens_out, usage.cost_usd) == (42, 7, 0.0)
     (req,) = net.requests
-    assert str(req.url) == "http://localhost:11434/api/chat"
+    assert str(req.url) == "http://127.0.0.1:11434/api/chat"
     body = json.loads(req.content)
     assert body["model"] == "qwen3:8b" and body["stream"] is True
     assert body["options"] == {"num_ctx": 8192, "num_predict": 64}
@@ -408,4 +408,4 @@ def test_check_reports_a_response_that_is_not_json(net):
     net.handler = lambda req: (200, "<html>not ollama</html>", {"content-type": "text/html"})
     result = providers.check("ollama")
     assert result["status"] == "error"
-    assert "Unexpected response from http://localhost:11434" in result["detail"]
+    assert "Unexpected response from http://127.0.0.1:11434" in result["detail"]

@@ -309,7 +309,7 @@ def test_privacy_mode_refuses_cloud_crews_before_any_call(models, bus):
 
 def test_privacy_mode_refuses_switching_to_the_cloud(models, bus):
     models.replies["ollama:code"] = ProviderError("ollama", "x", KeyProblem("invalid", "rejected"))
-    thread, results = run_in_thread(make_run(bus, mode="code", settings=make_settings(privacy_mode=True)))
+    thread, _results = run_in_thread(make_run(bus, mode="code", settings=make_settings(privacy_mode=True)))
     wait_for(lambda: of_type(bus, "decision"))
     assert "Privacy Mode" in engine.decide("switch", "openai:gpt-6.1-sol")
     assert engine.decide("stop") is None
@@ -612,7 +612,7 @@ def test_turn_start_names_discussion_and_revision(models, bus):
 
 def test_turn_start_again_after_switching_model(models, bus):
     models.replies["ollama:code"] = ProviderError("openai", "bad key", KeyProblem("invalid", "the API key was rejected"))
-    thread, results = run_in_thread(make_run(bus, mode="code"))
+    thread, _results = run_in_thread(make_run(bus, mode="code"))
     wait_for(lambda: of_type(bus, "decision"))
     engine.decide("switch", "ollama:spare")
     thread.join(5)

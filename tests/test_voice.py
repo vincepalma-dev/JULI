@@ -30,3 +30,15 @@ def test_mac_and_linux_tts_pass_text_on_stdin(monkeypatch):
         voice._speak_with_engine(evil, "system", "Coder")
     assert [args for args, _ in calls] == [["say"], ["espeak", "--stdin"]]
     assert all(kw["input"] == evil and kw["text"] is True for _, kw in calls)
+
+
+def test_failed_system_engine_reports_unavailable(monkeypatch, capsys):
+    def fail(args, check=False, **kw):  # like subprocess.run when the engine exits 1
+        if check:
+            raise subprocess.CalledProcessError(1, args)
+        return subprocess.CompletedProcess(args, 1)
+
+    monkeypatch.setitem(voice.sys.modules, "pyttsx3", None)  # import fails: not installed
+    monkeypatch.setattr(subprocess, "run", fail)
+    voice.speak("hello")
+    assert "Text-to-speech unavailable" in capsys.readouterr().out

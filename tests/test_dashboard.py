@@ -196,6 +196,13 @@ def test_serve_builds_when_the_dashboard_is_missing(fake_serve, dist, monkeypatc
     assert builds == [1]
 
 
+def test_serve_explains_a_missing_source_tree(monkeypatch, tmp_path):
+    monkeypatch.setattr(cli, "FRONTEND_DIR", tmp_path / "no-frontend")  # e.g. a regular, non-editable install
+    result = CliRunner().invoke(cli.app, ["serve", "--no-browser"])
+    assert result.exit_code == 1
+    assert "runs from a clone of its repository" in " ".join(result.output.split())
+
+
 def test_settings_report_each_agents_effective_role(client):
     agents = client.get("/api/settings", headers=AUTH).json()["agents"]
     assert agents["Coder"]["role"] == "coder"

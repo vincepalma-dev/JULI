@@ -99,7 +99,7 @@ def route_group(method: str, path: str) -> tuple[str, int] | None:
         return "chat", 30
     if method == "POST" and path.startswith("/api/runs/") and path.endswith(("/commit", "/push")):
         return "git", 10
-    if path.startswith("/api/settings/keys") or path.startswith("/api/providers/endpoints"):
+    if path.startswith(("/api/settings/keys", "/api/providers/endpoints")):
         return "keys", 10
     return "mutate", 60
 

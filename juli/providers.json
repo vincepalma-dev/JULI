@@ -13,7 +13,7 @@
     "deepseek": {"label": "DeepSeek", "kind": "openai", "base_url": "https://api.deepseek.com/v1"},
     "mistral": {"label": "Mistral", "kind": "openai", "base_url": "https://api.mistral.ai/v1"},
     "xai": {"label": "xAI", "kind": "openai", "base_url": "https://api.x.ai/v1"},
-    "ollama": {"label": "Ollama", "kind": "ollama", "base_url": "http://localhost:11434", "key": false}
+    "ollama": {"label": "Ollama", "kind": "ollama", "base_url": "http://127.0.0.1:11434", "key": false}
   },
   "models": {
     "openai:gpt-6-astra": {"in": 10, "out": 50},

@@ -32,8 +32,8 @@ def speak(text: str, agent_name: str = "System") -> None:
         try:
             _speak_with_engine(text, engine, agent_name)
             return
-        except Exception:
-            continue
+        except (ImportError, OSError, RuntimeError, subprocess.SubprocessError):
+            continue  # not installed or failed: try the next engine
     print("Text-to-speech unavailable. Install pyttsx3: pip install pyttsx3")
 
 
@@ -54,13 +54,14 @@ def _speak_with_engine(text: str, engine: str, agent_name: str) -> None:
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", WINDOWS_TTS_SCRIPT],
                 env={**os.environ, "JULI_TTS_TEXT": text[:200]},
                 capture_output=True,
+                check=True,
             )
         # Text goes in on stdin, so a leading "-" can't become an option
         # (say -o and espeak -w would write files).
         elif sys.platform == "darwin":
-            subprocess.run(["say"], input=text[:200], text=True, capture_output=True)
+            subprocess.run(["say"], input=text[:200], text=True, capture_output=True, check=True)
         else:
-            subprocess.run(["espeak", "--stdin"], input=text[:200], text=True, capture_output=True)
+            subprocess.run(["espeak", "--stdin"], input=text[:200], text=True, capture_output=True, check=True)
 
 
 def listen(timeout: int = 10, phrase_limit: int = 30) -> str | None:
@@ -81,6 +82,6 @@ def listen(timeout: int = 10, phrase_limit: int = 30) -> str | None:
         text = recognizer.recognize_google(audio)
         print(f'Heard: "{text}"')
         return text
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - mic, network or recognizer: any failure prints why and gives up
         print(f"Speech recognition failed: {e}")
         return None

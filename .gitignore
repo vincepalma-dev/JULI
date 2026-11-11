@@ -27,6 +27,8 @@ node_modules/
 dist/
 .cache/
 coverage/
+test-results/
+playwright-report/
 
 # Secrets — never commit
 .env

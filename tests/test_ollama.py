@@ -59,11 +59,11 @@ def test_version_tags_and_ps(net):
     assert [m["name"] for m in ollama.tags()] == ["qwen3:8b", "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"]
     assert ollama.ps()[0]["name"] == "qwen3:8b"
     assert ollama.installed() == {"qwen3:8b", "hf.co/bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M"}
-    assert str(net.requests[0].url) == "http://localhost:11434/api/version"
+    assert str(net.requests[0].url) == "http://127.0.0.1:11434/api/version"
 
 
 def test_offline_ollama(net):
-    assert ollama.status() == {"running": False, "version": None, "base_url": "http://localhost:11434"}
+    assert ollama.status() == {"running": False, "version": None, "base_url": "http://127.0.0.1:11434"}
     assert ollama.installed() == set()
     with pytest.raises(httpx.HTTPError):
         ollama.tags()
@@ -89,7 +89,7 @@ def test_models_route_adds_measured_speeds(client, net, laptop):
 def test_routes_when_ollama_is_off(client, laptop):
     assert client.get("/api/local/status", headers=AUTH).json()["running"] is False
     assert client.get("/api/local/models", headers=AUTH).json() == {
-        "ollama": {"running": False, "version": None, "base_url": "http://localhost:11434"},
+        "ollama": {"running": False, "version": None, "base_url": "http://127.0.0.1:11434"},
         "installed": [],
         "loaded": [],
     }

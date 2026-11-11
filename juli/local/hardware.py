@@ -18,11 +18,12 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
-import psutil  # type: ignore[import-untyped]  # ships no type stubs
+import psutil
 
 GB = 1e9
 MIB = 1024 * 1024
@@ -232,9 +233,11 @@ def _run(cmd: list[str]) -> str | None:
 
 
 def _windows_gpus() -> list[tuple[str, int | None]]:
+    gpus: list[tuple[str, int | None]] = []
+    if sys.platform != "win32":  # also tells mypy that winreg exists below
+        return gpus
     import winreg
 
-    gpus: list[tuple[str, int | None]] = []
     try:
         root = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, WINDOWS_GPU_CLASS)
     except OSError:
@@ -265,7 +268,7 @@ def _windows_gpus() -> list[tuple[str, int | None]]:
 
 
 def _cpu_name(system: str) -> str:
-    if system == "Windows":
+    if system == "Windows" and sys.platform == "win32":
         import winreg
 
         try:

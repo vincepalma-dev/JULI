@@ -32,7 +32,7 @@ def check_dependencies():
         import uvicorn  # noqa: F401
     except ImportError as e:
         print(f"  Missing Python dependency: {e.name}")
-        print("  Run: pip install -r requirements.txt")
+        print("  Run: pip install -e .")
         sys.exit(1)
 
     try:
@@ -69,7 +69,7 @@ def main():
     print()
     print("  J.U.L.I.")
     print("  Jolly Universe of Little Intelligences")
-    print("  ─────────────────────────────────────")
+    print("  -------------------------------------")  # ASCII: a redirected Windows stdout is cp1252
     print()
 
     if not is_loopback(args.host):

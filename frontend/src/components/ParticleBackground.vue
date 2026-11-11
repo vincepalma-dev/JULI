@@ -22,7 +22,6 @@ onMounted(() => {
   const particles = []
   const PARTICLE_COUNT = 60
   const CONNECTION_DISTANCE = 120
-  const MOUSE = { x: -1000, y: -1000 }
 
   function resize() {
     width = canvas.value.width = window.innerWidth

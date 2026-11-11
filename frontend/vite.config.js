@@ -14,4 +14,10 @@ export default defineConfig({
       '/ws': { target: `ws://${api}`, ws: true },
     },
   },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./tests/setup.js'],
+    include: ['tests/**/*.test.js'],
+    coverage: { provider: 'v8', include: ['src/**'], reporter: ['text', 'text-summary'] },
+  },
 })

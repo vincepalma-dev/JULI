@@ -5,7 +5,9 @@ import vue from '@vitejs/plugin-vue'
 const api = `127.0.0.1:${process.env.JULI_API_PORT || 8000}`
 
 export default defineConfig({
-  plugins: [vue()],
+  // Absolute URLs such as /mascot/... are files in public/, served as they are:
+  // don't turn them into imports (Vitest 4 can't load those as modules).
+  plugins: [vue({ template: { transformAssetUrls: { includeAbsolute: false } } })],
   server: {
     port: 3000,
     strictPort: true,

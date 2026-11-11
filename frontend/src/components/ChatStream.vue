@@ -58,7 +58,7 @@
 
             <!-- The reply: the crew's last message, as Juli, with the whole run's totals -->
             <article v-if="group.reply" class="flex gap-3">
-              <img src="/mascot/stills/juli-idle.png" alt="" width="32" height="32" class="mt-0.5 h-8 w-8 shrink-0" />
+              <JuliMascot still :size="32" class="mt-0.5" />
               <div class="min-w-0 flex-1">
                 <h3 class="mb-1.5 text-sm font-semibold text-juli-accent">Juli</h3>
                 <MessageBody :text="group.reply.content" />

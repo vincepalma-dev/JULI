@@ -155,6 +155,20 @@ describe('useRun follow-ups and refresh', () => {
     expect(run.messages.value.slice(2).every(m => m.agent_name === 'Coder')).toBe(true)
   })
 
+  it('takes a question back out of the timeline when it is refused, so asking again shows it once', async () => {
+    const run = useRun()
+    run.started(1, 'task', 'full')
+    fetch.mockImplementationOnce(async () => ({ ok: false, status: 409, statusText: 'Conflict', json: async () => ({ detail: "The question wasn't sent: the token cap of 10 tokens was reached." }) }))
+    const refused = await run.ask(1, 'Coder', 'Why SQLite?').catch(e => e)
+    expect(refused.message).toContain("wasn't sent")
+    expect(run.messages.value).toEqual([])
+    expect(run.asking.value).toBeNull()
+
+    fetch.mockImplementationOnce(async () => ({ ok: true, status: 200, json: async () => ({ agent: 'Coder', reply: 'Because.', model: 'ollama:code' }) }))
+    await run.ask(1, 'Coder', 'Why SQLite?')
+    expect(run.messages.value.map(m => m.message_type)).toEqual(['question', 'answer'])
+  })
+
   it('drops an answer that arrives after another project is shown', async () => {
     const run = useRun()
     run.started(1, 'task', 'full')

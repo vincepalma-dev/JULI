@@ -1210,6 +1210,7 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
     # The one agent as a run on a bus of its own: nothing is broadcast, and the
     # bus keeps what each call recorded (its text, tokens and cost) and any warnings.
     asking = Run(question, "full", [agent], settings=settings, bus=MessageBus())
+    asking.allowances = {}  # checked below instead, once this answer's cost is stored and counts
     asking.warn_unpriced(agent)
     notice: str | None = None
     try:
@@ -1257,6 +1258,8 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
             "cost_usd": cost_usd,
         },
     )
+    near, used_up = allowance_report([agent], settings)
+    warnings += near + [f"{line}. New runs with it are blocked until next month." for line in used_up]
     # Under the agent's own name, so they stay with its answer when the view shows only that agent.
     for warning in warnings:
         store.save_message(project_id, run_id, {"agent_name": agent.name, "content": warning, "message_type": "warning"})

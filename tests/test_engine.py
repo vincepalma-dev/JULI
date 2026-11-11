@@ -649,6 +649,19 @@ def test_follow_up_warns_when_the_budget_cap_cannot_count_the_model(client, mode
     assert engine.follow_up(store.get_run(run_id), "Planner", "q", make_settings(budget_usd=0.01))["warnings"] == []
 
 
+def test_follow_up_allowance_warnings_count_the_answer_itself(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    agents = {"Coder": {"role": "coder", "model": "openai:gpt-6.1-sol", "prompt": "Code it."}}
+    settings = make_settings(agents, allowances={"openai": 0.8})
+    models.usage = (100_000, 50_000)  # $0.20 in and $0.50 out: each answer costs $0.70
+
+    first = engine.follow_up(store.get_run(run_id), "Coder", "q", settings)
+    assert first["warnings"] == ["openai has used $0.70 of its $0.80 monthly allowance"]
+    second = engine.follow_up(store.get_run(run_id), "Coder", "q", settings)
+    assert second["warnings"] == ["openai has used $1.40 of its $0.80 monthly allowance. New runs with it are blocked until next month."]
+
+
 # ─── turn_start ──────────────────────────────────────────────
 
 

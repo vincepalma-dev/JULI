@@ -1,0 +1,88 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "juli"
+dynamic = ["version"]
+description = "A local-first crew of AI agents that builds software on your own machine."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    # LLM providers (OpenAI-compatible, Anthropic) and Ollama over HTTP.
+    # The SDK floors are the versions the test suite runs on; both use httpx2.
+    "openai>=3.46.0",
+    "anthropic>=2.6.0",
+    "httpx>=0.27.0",
+    # Backend
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+    "pydantic>=2.0.0",
+    # CLI
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    # Keys, settings and the model fit check
+    "python-dotenv>=1.0.0",
+    "keyring>=25.0.0",
+    "psutil>=5.9.0",
+    # IDE terminal (a PTY per session)
+    "pywinpty>=3.1; sys_platform == 'win32'",
+    "ptyprocess>=0.7; sys_platform != 'win32'",
+]
+
+[project.optional-dependencies]
+# Speech in and out (STT also needs pyaudio, which needs PortAudio).
+voice = [
+    "pyttsx3>=2.90",
+    "SpeechRecognition>=3.10.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=7.0",
+    "httpx2>=2.0",  # tests mock the SDKs' HTTP client with it
+    "mypy>=2.4",
+    "types-psutil",
+    "ruff==0.17.4",  # pinned so a ruff release can't change the default rule set
+    "pre-commit>=4.0",
+]
+
+[project.scripts]
+juli = "juli.cli:main"
+
+[project.urls]
+Repository = "https://github.com/vincepalma-dev/JULI"
+
+[tool.setuptools.dynamic]
+version = { attr = "juli.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["juli*"]
+
+[tool.setuptools.package-data]
+juli = ["providers.json"]
+"juli.local" = ["catalogue.json"]
+
+[tool.ruff]
+line-length = 140
+# The target comes from requires-python (3.10), so UP017 (datetime.UTC) and
+# UP041 (TimeoutError), which need 3.11, stay off.
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["typer.Option", "typer.Argument"]
+
+[tool.mypy]
+python_version = "3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["juli"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true

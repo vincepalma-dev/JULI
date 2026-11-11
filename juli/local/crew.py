@@ -29,10 +29,7 @@ MODES = ("privacy", "hybrid", "cloud")
 
 
 def _rate(hw: dict, installed: set[str]) -> list[dict]:
-    return [
-        {"entry": m, "installed": m["tag"] in installed, "fit": hardware.fit(m, hw, m["tag"] in installed)}
-        for m in catalogue.MODELS
-    ]
+    return [{"entry": m, "installed": m["tag"] in installed, "fit": hardware.fit(m, hw, m["tag"] in installed)} for m in catalogue.MODELS]
 
 
 def _best(rated: list[dict], role: str) -> dict | None:
@@ -183,10 +180,10 @@ def set_mode(
             agents[name].pop("num_ctx", None)
             warnings.append(f"No catalogue model fits this machine for {name}; it uses {roles.DEFAULT_MODEL}")
         changed[name] = agents[name]["model"]
-    for name in agents:
-        if cloud[name] and cloud_model and agents[name].get("model") != cloud_model:
-            agents[name]["model"] = cloud_model
-            agents[name].pop("num_ctx", None)  # num_ctx is for Ollama only
+    for name, agent in agents.items():
+        if cloud[name] and cloud_model and agent.get("model") != cloud_model:
+            agent["model"] = cloud_model
+            agent.pop("num_ctx", None)  # num_ctx is for Ollama only
             changed[name] = cloud_model
     settings["run"]["privacy_mode"] = mode == "privacy"
 

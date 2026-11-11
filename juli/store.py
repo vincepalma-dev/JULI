@@ -183,9 +183,7 @@ def delete_project(project_id: str) -> bool:
 def find_or_create_project(name: str) -> str:
     """The id of the most recently updated project with this name, created if missing."""
     with connect() as conn:
-        row = conn.execute(
-            "SELECT id FROM projects WHERE name = ? ORDER BY updated_at DESC LIMIT 1", (name,)
-        ).fetchone()
+        row = conn.execute("SELECT id FROM projects WHERE name = ? ORDER BY updated_at DESC LIMIT 1", (name,)).fetchone()
     return row["id"] if row else create_project(name)["id"]
 
 
@@ -193,8 +191,7 @@ def create_run(project_id: str, prompt: str, mode: str, crew_json: str | None = 
     ts = now()
     with connect() as conn:
         cur = conn.execute(
-            "INSERT INTO runs (project_id, prompt, mode, status, crew_json, started_at) "
-            "VALUES (?, ?, ?, 'running', ?, ?)",
+            "INSERT INTO runs (project_id, prompt, mode, status, crew_json, started_at) VALUES (?, ?, ?, 'running', ?, ?)",
             (project_id, prompt, mode, crew_json, ts),
         )
         conn.execute("UPDATE projects SET updated_at = ? WHERE id = ?", (ts, project_id))

@@ -102,7 +102,7 @@
     <CrewBuilder :open="panel === 'crew'" :settings="settings" :local-models="localModels" :cloud-models="cloudModels" :locked="live" @close="panel = null" @saved="loadSettings" @mode-changed="modeChanged" />
     <ModelsPanel :open="panel === 'models'" :pulls="run.pulls" :providers="providers" @close="panel = null" @changed="loadSettings" />
     <WorkspacePanel :open="panel === 'workspace'" :project-id="activeProjectId" :runs="run.runs.value" :active-run-id="run.activeRunId.value" :live="live" :show-path="showPath" @close="panel = null" />
-    <ProjectsPanel :open="panel === 'projects'" :projects="projects" :active-project-id="activeProjectId" @close="panel = null" @create-project="createProject" @select-project="selectProject($event, true)" @delete-project="deleteProject" />
+    <ProjectsPanel :open="panel === 'projects'" :projects="projects" :active-project-id="activeProjectId" @close="panel = null" @create-project="createProject($event, true)" @select-project="selectProject($event, true)" @delete-project="deleteProject" />
     <SettingsPanel :open="panel === 'settings'" :settings="settings" :providers="providers" :local-models="localModels" @close="panel = null" @saved="loadSettings" />
 
     <!-- Plan and command approvals also come up as a modal; closing it leaves the card in the run -->
@@ -244,11 +244,12 @@ async function selectProject(id, fromPanel = false) {
   }
 }
 
-async function createProject(name) {
+// fromPanel: the Projects panel asked, so it closes; a project made on load leaves any open panel alone.
+async function createProject(name, fromPanel = false) {
   try {
     const project = await apiFetch('/api/projects', { method: 'POST', body: { name } })
     projects.value.unshift(project)
-    await selectProject(project.id, true)
+    await selectProject(project.id, fromPanel)
   } catch (e) {
     toastError(e)
   }

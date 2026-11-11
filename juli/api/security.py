@@ -15,9 +15,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-DEFAULT_ALLOWED_ORIGINS = [
-    f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in (3000, 8000)
-]
+DEFAULT_ALLOWED_ORIGINS = [f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in (3000, 8000)]
 
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
 
@@ -99,7 +97,7 @@ def route_group(method: str, path: str) -> tuple[str, int] | None:
         return "chat", 30
     if method == "POST" and path.startswith("/api/runs/") and path.endswith(("/commit", "/push")):
         return "git", 10
-    if path.startswith("/api/settings/keys") or path.startswith("/api/providers/endpoints"):
+    if path.startswith(("/api/settings/keys", "/api/providers/endpoints")):
         return "keys", 10
     return "mutate", 60
 

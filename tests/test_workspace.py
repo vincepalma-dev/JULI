@@ -406,3 +406,52 @@ def test_commit_refused_while_a_task_runs_in_the_project(client):
     run_id = new_run(pid)
     assert message_bus.try_begin_task("t", pid)
     assert client.post(f"/api/runs/{run_id}/commit", headers=AUTH).status_code == 409
+
+
+@pytest.mark.parametrize(
+    ("rel", "why"),
+    [
+        ("/etc/passwd", "absolute paths aren't allowed"),
+        ("C:/Windows/x.py", "absolute paths aren't allowed"),
+        ("./", "not a valid path"),
+        ("a\0b.py", "not a valid path"),
+        (".git/config", "the .git folder is off limits"),
+        ("src/.GIT/hooks/pre-commit", "the .git folder is off limits"),
+    ],
+)
+def test_unsafe_paths_are_refused(project, rel, why):
+    written, refused = workspace.write_files(project, new_run(project), [(rel, "x")])
+    assert written == [] and refused == [(rel, why)]
+
+
+def test_files_that_cant_be_written_safely_are_refused(project):
+    base = workspace.ensure(project)
+    (base / "logo.png").write_bytes(b"\x89PNG\xff\xfe")
+    (base / "src").mkdir()
+    run_id = new_run(project)
+    big = "x" * (workspace.MAX_FILE_BYTES + 1)  # the limit is 1 MB
+    written, refused = workspace.write_files(project, run_id, [("big.py", big), ("src", "x"), ("logo.png", "x"), ("ok.py", "x")])
+    assert written == ["ok.py"]
+    assert dict(refused) == {
+        "big.py": "it's over 1 MB",
+        "src": "a link or folder is in the way",
+        "logo.png": "the existing file isn't text",
+    }
+    assert (base / "logo.png").read_bytes() == b"\x89PNG\xff\xfe"  # left as it was
+
+
+def test_git_problems_are_git_errors(project, monkeypatch):
+    def slow(*args, **kwargs):
+        raise subprocess.TimeoutExpired("git", 1)
+
+    monkeypatch.setattr(workspace.subprocess, "run", slow)
+    with pytest.raises(workspace.GitError, match="took longer than"):
+        workspace._git(workspace.root(project), "status")
+    failed = subprocess.CompletedProcess(["git"], 128, "", "fatal: not a git repository\n")
+    with pytest.raises(workspace.GitError, match="git status failed: fatal: not a git repository"):
+        workspace._check(failed, "git status")
+    with pytest.raises(workspace.GitError, match="exit code 1"):
+        workspace._check(subprocess.CompletedProcess(["git"], 1, "", ""), "git push")
+    monkeypatch.setattr(workspace.shutil, "which", lambda name: None)
+    with pytest.raises(workspace.GitError, match="git isn't installed"):
+        workspace.commit(project, new_run(project), "m")

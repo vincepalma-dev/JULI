@@ -13,8 +13,7 @@ from juli.local import crew
 router = APIRouter(prefix="/settings")
 
 KEYCHAIN_HELP = (
-    "The OS keychain isn't available on this machine. "
-    "Put your keys in a .env file instead (see .env.example), then restart JULI."
+    "The OS keychain isn't available on this machine. Put your keys in a .env file instead (see .env.example), then restart JULI."
 )
 
 
@@ -141,9 +140,7 @@ def update_api_keys(keys: KeyUpdates) -> dict:
                 settings["providers"].append(provider)
         config.save_settings(settings)
     # Network checks run outside the settings lock.
-    health = {
-        p: llm.check(p, settings.get("endpoints"), privacy=settings["run"]["privacy_mode"]) for p in saved
-    }
+    health = {p: llm.check(p, settings.get("endpoints"), privacy=settings["run"]["privacy_mode"]) for p in saved}
     return {"status": "saved", "health": health}
 
 

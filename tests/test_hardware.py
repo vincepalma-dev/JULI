@@ -64,7 +64,9 @@ def test_apple_silicon_uses_unified_memory():
 
 
 def test_amd_on_linux_via_rocm_smi():
-    rocm = json.dumps({"card0": {"Card Series": "Radeon RX 7900 XTX", "VRAM Total Memory (B)": "25753026560", "VRAM Total Used Memory (B)": "1000"}})
+    rocm = json.dumps(
+        {"card0": {"Card Series": "Radeon RX 7900 XTX", "VRAM Total Memory (B)": "25753026560", "VRAM Total Used Memory (B)": "1000"}}
+    )
     hw = hardware.detect(readings(system="Linux", machine="x86_64", rocm_smi=rocm, windows_gpus=[]))
     assert hw["gpu"]["name"] == "Radeon RX 7900 XTX"
     assert hw["gpu"]["vram_gb"] == pytest.approx(25.75, abs=0.01)
@@ -151,3 +153,39 @@ def test_gpu_scans_are_cached_but_ram_and_disk_are_not(monkeypatch):
     assert calls.count("nvidia-smi") == 1
     assert (first.disk_free_bytes, second.disk_free_bytes) == (10 * 10**9, 5 * 10**9)
     assert first.windows_gpus == second.windows_gpus and first.windows_gpus is not second.windows_gpus
+
+
+def test_cpu_name_on_linux_and_macos(monkeypatch):
+    real_read_text = hardware.Path.read_text
+
+    def read_text(self, *args, **kwargs):
+        if self.as_posix() == "/proc/cpuinfo":
+            return "processor\t: 0\nmodel name\t: AMD Ryzen 7 7840U\n"
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(hardware.Path, "read_text", read_text)
+    assert hardware._cpu_name("Linux") == "AMD Ryzen 7 7840U"
+    monkeypatch.setattr(hardware, "_run", lambda cmd: "Apple M3 Pro\n" if cmd[0] == "sysctl" else None)
+    assert hardware._cpu_name("Darwin") == "Apple M3 Pro"
+    monkeypatch.setattr(hardware.platform, "processor", lambda: "")
+    monkeypatch.setattr(hardware.platform, "machine", lambda: "riscv64")
+    assert hardware._cpu_name("FreeBSD") == "riscv64"  # nothing better: the machine type
+
+
+def test_run_returns_none_when_a_tool_is_missing_or_fails(monkeypatch):
+    def missing(*args, **kwargs):
+        raise FileNotFoundError("nvidia-smi")
+
+    monkeypatch.setattr(hardware.subprocess, "run", missing)
+    assert hardware._run(["nvidia-smi"]) is None
+    monkeypatch.setattr(hardware.subprocess, "run", lambda *a, **kw: hardware.subprocess.CompletedProcess(a[0], 9, "partial", ""))
+    assert hardware._run(["nvidia-smi"]) is None
+
+
+def test_disk_free_uses_the_nearest_existing_folder(tmp_path):
+    assert hardware._disk_free(tmp_path / "not" / "made" / "yet") == hardware.shutil.disk_usage(tmp_path).free
+
+
+def test_windows_gpus_are_empty_elsewhere(monkeypatch):
+    monkeypatch.setattr(hardware.sys, "platform", "linux")
+    assert hardware._windows_gpus() == []

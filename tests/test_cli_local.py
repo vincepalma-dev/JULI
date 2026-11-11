@@ -32,7 +32,9 @@ def test_catalogue_shows_fit_and_licenses(laptop):
 def test_models_list_and_offline_message(net, laptop):
     result = invoke("models", "list")
     assert result.exit_code == 1 and "ollama serve" in result.output
-    net.handler = serve({("GET", "/api/tags"): (200, fixture_json("ollama_tags.json"), {}), ("GET", "/api/ps"): (200, fixture_json("ollama_ps.json"), {})})
+    net.handler = serve(
+        {("GET", "/api/tags"): (200, fixture_json("ollama_tags.json"), {}), ("GET", "/api/ps"): (200, fixture_json("ollama_ps.json"), {})}
+    )
     result = invoke("models", "list")
     assert result.exit_code == 0 and "Q4_K_M" in result.output and "yes" in result.output
 

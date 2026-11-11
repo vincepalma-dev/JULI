@@ -1,0 +1,71 @@
+name: Nightly real model
+
+# A real on-device run, which CI's fake model can't show: install Ollama,
+# download the smallest Apache-2.0 model, benchmark it, and run a local crew
+# on it in Privacy Mode.
+on:
+  schedule:
+    - cron: "0 18 * * *"  # 02:00 in the Philippines
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-model:
+    name: Ollama and a local crew
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      OLLAMA_VERSION: 0.24.0
+      OLLAMA_SHA256: 15c5f8d66ba06e0d3b4719df8868612dbd66e14e82760929bb3552e1657cdcdb
+      MODEL: qwen3:1.7b  # 1.4 GB, Apache-2.0: no licence to accept
+      JULI_DATA_DIR: ${{ runner.temp }}/juli
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.10"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e .
+
+      - name: Install and start Ollama
+        run: |
+          archive=ollama-linux-amd64.tar.zst
+          curl -sSfL -o "$archive" "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/$archive"
+          echo "${OLLAMA_SHA256}  $archive" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/ollama"
+          tar --zstd -xf "$archive" -C "$RUNNER_TEMP/ollama"
+          "$RUNNER_TEMP/ollama/bin/ollama" serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 30); do curl -sf http://127.0.0.1:11434/api/version && break; sleep 1; done
+
+      - name: Hardware and catalogue
+        run: |
+          juli hardware
+          juli models catalogue
+
+      - name: Download and benchmark
+        run: |
+          juli models pull "$MODEL"
+          juli models list
+          juli models bench "$MODEL"
+
+      - name: A Privacy Mode run on the real model
+        run: |
+          python - <<'EOF'
+          import os
+          from juli import config
+
+          settings = config.load_settings()
+          for agent in settings["agents"].values():
+              agent["model"] = "ollama:" + os.environ["MODEL"]
+              agent["max_tokens"] = 300  # keeps a CPU run short
+          config.save_settings(settings)
+          EOF
+          juli mode privacy
+          juli run "Write a Python function add(a, b) that returns the sum, with one pytest test." --plan --discuss 0 -o "$RUNNER_TEMP/out"
+          ls -l "$RUNNER_TEMP/out"
+
+      - if: failure()
+        run: tail -n 100 "$RUNNER_TEMP/ollama.log"

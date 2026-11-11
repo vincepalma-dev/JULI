@@ -74,11 +74,11 @@
           </div>
           <div>
             <label :for="`model-${name}`" class="label">Model</label>
-            <input :id="`model-${name}`" :value="cfg.model" list="crew-models" class="field font-mono" spellcheck="false" autocomplete="off" @change="save(name, { model: $event.target.value.trim() })" />
+            <input :id="`model-${name}`" :value="shown(name, 'model')" list="crew-models" class="field font-mono" spellcheck="false" autocomplete="off" @input="type(name, 'model', $event)" @change="save(name, { model: $event.target.value.trim() })" />
           </div>
           <div>
             <label :for="`max-${name}`" class="label">Max output tokens</label>
-            <input :id="`max-${name}`" :value="cfg.max_tokens ?? ''" type="number" min="1" max="200000" inputmode="numeric" class="field" placeholder="Model default" @change="save(name, { max_tokens: $event.target.value ? Number($event.target.value) : null })" />
+            <input :id="`max-${name}`" :value="shown(name, 'max_tokens')" type="number" min="1" max="200000" inputmode="numeric" class="field" placeholder="Model default" @input="type(name, 'max_tokens', $event)" @change="save(name, { max_tokens: $event.target.value ? Number($event.target.value) : null })" />
           </div>
         </div>
 
@@ -87,7 +87,7 @@
           <div class="mt-3 space-y-3">
             <div>
               <label :for="`title-${name}`" class="label">Job title</label>
-              <input :id="`title-${name}`" :value="cfg.job_title || ''" maxlength="80" class="field" placeholder="e.g. Lead DB Admin" @change="save(name, { job_title: $event.target.value.trim() })" />
+              <input :id="`title-${name}`" :value="shown(name, 'job_title')" maxlength="80" class="field" placeholder="e.g. Lead DB Admin" @input="type(name, 'job_title', $event)" @change="save(name, { job_title: $event.target.value.trim() })" />
             </div>
             <fieldset>
               <legend class="label">Colour</legend>
@@ -97,7 +97,7 @@
             </fieldset>
             <div>
               <label :for="`prompt-${name}`" class="label">System prompt</label>
-              <textarea :id="`prompt-${name}`" :value="cfg.prompt || ''" rows="5" maxlength="8000" class="field resize-y font-mono text-xs leading-relaxed" @change="save(name, { prompt: $event.target.value })"></textarea>
+              <textarea :id="`prompt-${name}`" :value="shown(name, 'prompt')" rows="5" maxlength="8000" class="field resize-y font-mono text-xs leading-relaxed" @input="type(name, 'prompt', $event)" @change="save(name, { prompt: $event.target.value })"></textarea>
             </div>
           </div>
         </details>
@@ -131,7 +131,7 @@
 
 <script setup>
 // The crew: each agent's role, model and optional output limit; Auto-Crew picks; the mode switch.
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch } from 'vue'
 import AgentOrb from './AgentOrb.vue'
 import Icon from './Icon.vue'
 import ModeSwitch from './ModeSwitch.vue'
@@ -154,6 +154,22 @@ const allModels = computed(() => [...new Set([...props.localModels, ...(props.se
 const status = reactive({})
 const error = ref('')
 const removing = ref(null)
+
+// Text typed into a field but not saved yet, by "<agent>.<field>". Each save
+// reloads the settings, and that re-render must not undo typing elsewhere; a
+// draft goes once the reloaded settings hold what was typed.
+const typed = reactive({})
+const saved = (name, field) => String(props.settings.agents?.[name]?.[field] ?? '')
+const shown = (name, field) => typed[`${name}.${field}`] ?? saved(name, field)
+const type = (name, field, event) => { typed[`${name}.${field}`] = event.target.value }
+watch(() => props.settings, () => {
+  for (const key of Object.keys(typed)) {
+    const [name, field] = key.split('.')
+    const value = saved(name, field)
+    // Models and titles are saved trimmed; prompts as typed.
+    if (value === typed[key] || value === typed[key].trim()) delete typed[key]
+  }
+})
 
 async function save(name, patch) {
   status[name] = { ok: true, text: 'Saving…' }

@@ -69,6 +69,7 @@ def test_docker_argv_mounts_only_the_workspace_without_network(tmp_path):
     argv = terminal.docker_argv(tmp_path, "pytest -q", SANDBOX, "juli-cmd-x", direct=True)
     assert argv[:2] == ["docker", "run"] and "--rm" in argv
     assert argv[argv.index("--network") + 1] == "none"
+    assert argv[argv.index("--pull") + 1] == "never"  # JULI doesn't download images
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "--mount"]
     assert mounts == [
         f"type=bind,source={tmp_path},target=/workspace",
@@ -275,3 +276,41 @@ def test_sandbox_settings_routes(client, procs):
     assert client.get("/api/sandbox", headers=AUTH).json()["settings"]["timeout"] == 60
     for bad in ({"image": "--privileged"}, {"image": "a b"}, {"timeout": 1}, {"enabled": True, "extra": 1}):
         assert client.put("/api/sandbox", json=bad, headers=AUTH).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [(ImportError("no module"), "pip install -e ."), (FileNotFoundError(2, "No such file"), "The shell couldn't start: No such file")],
+)
+def test_a_shell_that_cant_start_is_a_clear_message(tmp_path, monkeypatch, error, message):
+    def spawn(*args):
+        raise error
+
+    monkeypatch.setattr(terminal, "SPAWN", spawn)
+    with pytest.raises(terminal.TerminalUnavailable, match=message):
+        terminal.PtySession(tmp_path, 80, 24)
+
+
+@pytest.mark.parametrize("platform", ["win32", "linux"])
+def test_kill_tree_kills_the_whole_process_group(monkeypatch, platform):
+    calls = []
+    monkeypatch.setattr(terminal.sys, "platform", platform)
+    monkeypatch.setattr(terminal.subprocess, "run", lambda argv, **kw: calls.append(argv))
+    monkeypatch.setattr(terminal.os, "killpg", lambda pid, sig: calls.append(("killpg", pid)), raising=False)
+    monkeypatch.setattr(terminal.signal, "SIGKILL", 9, raising=False)  # Windows has no SIGKILL
+    proc = FakeProc(["pytest"], block=True)
+    terminal._kill_tree(proc)
+    expected = ["taskkill", "/F", "/T", "/PID", "4242"] if platform == "win32" else ("killpg", 4242)
+    assert calls == [expected] and proc.killed
+
+
+def test_kill_tree_survives_a_process_that_is_already_gone(monkeypatch):
+    def gone(*args, **kwargs):
+        raise ProcessLookupError
+
+    monkeypatch.setattr(terminal.sys, "platform", "linux")
+    monkeypatch.setattr(terminal.os, "killpg", gone, raising=False)
+    monkeypatch.setattr(terminal.signal, "SIGKILL", 9, raising=False)
+    proc = FakeProc(["pytest"], block=True)
+    terminal._kill_tree(proc)  # no exception
+    assert proc.killed

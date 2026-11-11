@@ -324,8 +324,7 @@ class Run:
             if self.budget and providers.cost(agent.model, 0, 0, self.endpoints) is None:
                 self._warn(
                     f"price:{agent.model}",
-                    f"{agent.model} has no known price, so the budget cap can't count its cost. "
-                    "Set a token cap to limit it.",
+                    f"{agent.model} has no known price, so the budget cap can't count its cost. Set a token cap to limit it.",
                 )
         names = ", ".join(f"{a.name} ({a.model})" for a in self.agents)
         self._publish("System", f"Crew for this {self.mode} run: {names}", "system")
@@ -499,7 +498,9 @@ class Run:
             return text
         commands = workspace.extract_commands(text)
         if len(commands) > MAX_COMMANDS_PER_TURN:
-            self._publish("System", f"{agent.name} proposed {len(commands)} commands; only the first {MAX_COMMANDS_PER_TURN} run.", "warning")
+            self._publish(
+                "System", f"{agent.name} proposed {len(commands)} commands; only the first {MAX_COMMANDS_PER_TURN} run.", "warning"
+            )
         results = [self._command(agent.name, c) for c in commands[:MAX_COMMANDS_PER_TURN]]
         failed = [r for r in results if r.status in ("failed", "timeout")]
         coder = self.steps["coder"][0] if self.steps.get("coder") else None
@@ -755,8 +756,19 @@ class Run:
             raise ValueError("This checkpoint was saved by another version of JULI")
         names = {f.name for f in fields(Agent)}
         crew = [Agent(**{k: v for k, v in a.items() if k in names}) for a in state["crew"]]
-        options = {k: v for k, v in (state.get("options") or {}).items() if k in ("max_cycles", "approve_plan", "discussion_rounds", "no_devops")}
-        run = cls(state["prompt"], state["mode"], crew, settings=settings, review_source=state.get("review_source") or "", notices=notices or (), bus=bus, **options)
+        options = {
+            k: v for k, v in (state.get("options") or {}).items() if k in ("max_cycles", "approve_plan", "discussion_rounds", "no_devops")
+        }
+        run = cls(
+            state["prompt"],
+            state["mode"],
+            crew,
+            settings=settings,
+            review_source=state.get("review_source") or "",
+            notices=notices or (),
+            bus=bus,
+            **options,
+        )
         run._replay = list(state.get("steps") or [])
         run._notes = list(state.get("notes") or [])
         usage = state.get("usage") or {}
@@ -926,4 +938,11 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
             "cost_usd": cost_usd,
         },
     )
-    return {"agent": agent.name, "reply": reply, "model": agent.model, "tokens_in": tokens_in, "tokens_out": tokens_out, "cost_usd": cost_usd}
+    return {
+        "agent": agent.name,
+        "reply": reply,
+        "model": agent.model,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cost_usd": cost_usd,
+    }

@@ -97,11 +97,10 @@ def test_route_groups():
 
 
 def ws_close_code(client, messages, headers=ORIGIN):
-    with pytest.raises(WebSocketDisconnect) as exc:
-        with client.websocket_connect("/ws", headers=headers) as ws:
-            for m in messages:
-                ws.send_json(m)
-            ws.receive_json()
+    with pytest.raises(WebSocketDisconnect) as exc, client.websocket_connect("/ws", headers=headers) as ws:
+        for m in messages:
+            ws.send_json(m)
+        ws.receive_json()
     return exc.value.code
 
 

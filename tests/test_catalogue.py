@@ -46,7 +46,9 @@ def test_listing_marks_installed_models_and_their_fit(laptop):
 
 
 def test_catalogue_route(client, laptop, net):
-    net.handler = serve({("GET", "/api/version"): (200, {"version": "0.20.0"}, {}), ("GET", "/api/tags"): (200, fixture_json("ollama_tags.json"), {})})
+    net.handler = serve(
+        {("GET", "/api/version"): (200, {"version": "0.20.0"}, {}), ("GET", "/api/tags"): (200, fixture_json("ollama_tags.json"), {})}
+    )
     data = client.get("/api/local/catalogue", headers=AUTH).json()
     assert data["ollama"]["running"] is True and data["hardware"]["gpu"] is None
     assert next(m for m in data["models"] if m["tag"] == "qwen3:8b")["installed"] is True
@@ -135,7 +137,9 @@ def test_hf_models_fit_each_quant(net, laptop):
 
 def test_hf_estimates_params_without_gguf_metadata(net, laptop):
     info = {k: v for k, v in fixture_json("hf_model_qwen_moe.json").items() if k != "gguf"}
-    net.handler = serve({**hf_routes(QWEN_REPO, "hf_model_qwen_moe.json", "hf_tree_qwen_moe.json"), ("GET", f"/api/models/{QWEN_REPO}"): (200, info, {})})
+    net.handler = serve(
+        {**hf_routes(QWEN_REPO, "hf_model_qwen_moe.json", "hf_tree_qwen_moe.json"), ("GET", f"/api/models/{QWEN_REPO}"): (200, info, {})}
+    )
     found = catalogue.hf_models(QWEN_REPO, laptop, set(), config.load_settings())
     q8 = next(m for m in found["models"] if m["quant"] == "Q8_0")
     assert q8["params_b"] == pytest.approx(32.48 * 8 / 8.5, abs=0.1)
@@ -181,7 +185,9 @@ MODELS_LIST = {"object": "list", "data": [{"id": "qwen3-8b", "object": "model", 
 
 def test_add_a_local_endpoint_tests_it_and_lists_models(client, net):
     net.handler = lambda req: (200, MODELS_LIST, {})
-    r = client.post("/api/providers/endpoints", json={"id": "lmstudio", "label": "LM Studio", "base_url": "http://localhost:1234/v1/"}, headers=AUTH)
+    r = client.post(
+        "/api/providers/endpoints", json={"id": "lmstudio", "label": "LM Studio", "base_url": "http://localhost:1234/v1/"}, headers=AUTH
+    )
     assert r.status_code == 201
     body = r.json()
     assert body["local"] is True and body["key"] is False
@@ -196,7 +202,11 @@ def test_add_a_local_endpoint_tests_it_and_lists_models(client, net):
 def test_endpoint_keys_go_to_the_keychain(client, net, memory_keyring):
     net.handler = lambda req: (200, MODELS_LIST, {})
     key = "sk-test-not-a-real-key-1234"
-    r = client.post("/api/providers/endpoints", json={"id": "myhost", "label": "Mine", "base_url": "https://llm.example.com/v1", "key": key}, headers=AUTH)
+    r = client.post(
+        "/api/providers/endpoints",
+        json={"id": "myhost", "label": "Mine", "base_url": "https://llm.example.com/v1", "key": key},
+        headers=AUTH,
+    )
     assert r.status_code == 201 and r.json()["key"] is True
     assert keystore.get_key("myhost") == key
     assert key not in config.settings_path().read_text(encoding="utf-8")
@@ -219,7 +229,11 @@ def test_bad_endpoints_are_rejected(client, endpoint_id, base_url):
 
 def test_remove_an_endpoint(client, net, memory_keyring):
     net.handler = lambda req: (200, MODELS_LIST, {})
-    client.post("/api/providers/endpoints", json={"id": "box", "label": "Box", "base_url": "http://192.168.1.20:8080/v1", "key": "not-a-real-key-5678"}, headers=AUTH)
+    client.post(
+        "/api/providers/endpoints",
+        json={"id": "box", "label": "Box", "base_url": "http://192.168.1.20:8080/v1", "key": "not-a-real-key-5678"},
+        headers=AUTH,
+    )
     client.put("/api/settings/agents", json={"Coder": {"model": "box:qwen3-8b"}}, headers=AUTH)
     assert client.delete("/api/providers/endpoints/box", headers=AUTH).status_code == 409  # in use
     client.put("/api/settings/agents", json={"Coder": {"model": "ollama:qwen3:8b"}}, headers=AUTH)

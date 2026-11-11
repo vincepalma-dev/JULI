@@ -228,9 +228,7 @@ def _drive(run: engine.Run, project_id: str, settings: dict, *, voice: bool, out
 
     result = results[0] if results else engine.RunResult("stopped" if stopped else "error")
     store.finish_run(run_id, result.status, result.tokens_in, result.tokens_out, result.cost_usd)
-    console.print(
-        f"\n[bold]Run {result.status}[/]  {result.tokens_in} tokens in · {result.tokens_out} out · ${result.cost_usd:.4f}"
-    )
+    console.print(f"\n[bold]Run {result.status}[/]  {result.tokens_in} tokens in · {result.tokens_out} out · ${result.cost_usd:.4f}")
     console.print(f"Saved to {save_output(message_bus.history, output_dir)}", highlight=False)
     if result.status == "error":
         console.print(f"Fix the cause, then `juli resume {run_id}` continues from the last finished step.")
@@ -246,7 +244,9 @@ def run(
     project: str = typer.Option("CLI", "--project", help="Project to store the run in"),
     max_cycles: int = typer.Option(3, "--max-cycles", min=1, max=10, help="Code-review cycles at most"),
     approve_plan: bool = typer.Option(False, "--approve-plan", help="Pause after the plan to approve or change it"),
-    discuss: int | None = typer.Option(None, "--discuss", min=0, max=4, help="Crew discussion rounds on the plan (0 is off; default from settings)"),
+    discuss: int | None = typer.Option(
+        None, "--discuss", min=0, max=4, help="Crew discussion rounds on the plan (0 is off; default from settings)"
+    ),
     no_devops: bool = typer.Option(False, "--no-devops", help="Skip the DevOps agent"),
     ignore_allowance: bool = typer.Option(False, "--ignore-allowance", help="Run even if a monthly allowance is used up"),
     voice: bool = typer.Option(False, "--voice", "-v", help="Speak each agent's reply"),
@@ -357,6 +357,14 @@ FRONTEND_DIR = config.ROOT_DIR / "frontend"
 
 def build_dashboard() -> None:
     """npm run build in frontend/ (npm install first if needed)."""
+    if not FRONTEND_DIR.is_dir():
+        # Only a clone of the repository has the dashboard's sources (an editable install).
+        console.print(
+            "The dashboard's sources aren't here. JULI runs from a clone of its repository: "
+            "git clone https://github.com/vincepalma-dev/JULI.git, then pip install -e . in that folder.",
+            style="red",
+        )
+        raise typer.Exit(1)
     npm = shutil.which("npm")
     if not npm:
         console.print("Node.js is needed to build the dashboard. Install it from https://nodejs.org", style="red")
@@ -648,7 +656,9 @@ def auto_crew(
     if result["shared"]:
         console.print("The downloads don't all fit on disk, so every agent shares one model.", style="yellow")
     if result["downloads"]:
-        console.print(f"To download: {', '.join(result['downloads'])} ({_gb(result['download_gb'])}). Use `juli models pull`.", markup=False)
+        console.print(
+            f"To download: {', '.join(result['downloads'])} ({_gb(result['download_gb'])}). Use `juli models pull`.", markup=False
+        )
     for lic in result["licenses"]:
         console.print(f"Needs acceptance before download: {lic['name']} ({lic['url']})", markup=False)
     console.print("Saved." if apply else "Run with --apply to save these picks.")
@@ -753,7 +763,9 @@ def workspace_tree(project: str = typer.Option("CLI", "--project", help="The pro
 
 
 @workspace_app.command("show")
-def workspace_show(path: str = typer.Argument(..., help="A file in the workspace"), project: str = typer.Option("CLI", "--project")) -> None:
+def workspace_show(
+    path: str = typer.Argument(..., help="A file in the workspace"), project: str = typer.Option("CLI", "--project")
+) -> None:
     """Print one file from the workspace."""
     try:
         f = workspace.read_file(_project_id(project), path)
@@ -770,7 +782,9 @@ def workspace_show(path: str = typer.Argument(..., help="A file in the workspace
 
 
 @workspace_app.command("diff")
-def workspace_diff(run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")) -> None:
+def workspace_diff(
+    run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")
+) -> None:
     """Show what a run changed, as a unified diff."""
     run_id = _run_id(_project_id(project), run)
     console.out(workspace.diff(run_id) or f"Run {run_id} wrote no files.\n", end="", highlight=False)
@@ -786,7 +800,9 @@ def workspace_zip(out: str = typer.Argument(..., help="The .zip file to write"),
 
 
 @workspace_app.command("commit")
-def workspace_commit(run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")) -> None:
+def workspace_commit(
+    run: int | None = typer.Option(None, "--run", help="Default: the project's latest run"), project: str = typer.Option("CLI", "--project")
+) -> None:
     """Commit the workspace to branch juli/run-<id> (in the workspace's own repo)."""
     project_id = _project_id(project)
     run_id = _run_id(project_id, run)
@@ -854,7 +870,9 @@ def sandbox(
         console.print(f"Every agent command asks first: {problem}.", style="yellow", markup=False)
     else:
         console.print("Test and lint commands without shell metacharacters run on their own; the rest ask first.")
-        console.print(f"The image must already have the tools (no network inside). Pull it with `docker pull {cfg['image']}`.", markup=False)
+        console.print(
+            f"The image must already have the tools (no network inside). Pull it with `docker pull {cfg['image']}`.", markup=False
+        )
 
 
 def main() -> None:

@@ -104,9 +104,7 @@ def speeds(data: dict) -> tuple[float | None, float | None]:
             return None
         return round(count / (ns / 1e9), 2)
 
-    return rate(data.get("eval_count"), data.get("eval_duration")), rate(
-        data.get("prompt_eval_count"), data.get("prompt_eval_duration")
-    )
+    return rate(data.get("eval_count"), data.get("eval_duration")), rate(data.get("prompt_eval_count"), data.get("prompt_eval_duration"))
 
 
 def benchmark(model: str, endpoints: Mapping[str, dict] | None = None) -> dict:

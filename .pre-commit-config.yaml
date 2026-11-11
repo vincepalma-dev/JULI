@@ -1,0 +1,15 @@
+# Needs gitleaks 8.30+ on PATH (https://github.com/gitleaks/gitleaks/releases):
+# the gitleaks-system hook runs that binary. Then: pip install -e .[dev] and pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4  # keep in step with the ruff pin in pyproject.toml
+    hooks:
+      - id: ruff-check
+      - id: ruff-format
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # Uses the gitleaks on PATH, so pre-commit doesn't build it with Go.
+      - id: gitleaks-system
+        pass_filenames: false  # it scans what's staged

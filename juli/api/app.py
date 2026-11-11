@@ -45,7 +45,7 @@ class ConnectionManager:
         for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
-            except Exception:
+            except Exception:  # noqa: BLE001 - one broken socket must never stop the broadcast
                 self.disconnect(connection)
 
 

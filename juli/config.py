@@ -188,8 +188,7 @@ def _migrate_keys() -> None:
                 stored_all = False
     if not stored_all:
         log.warning(
-            "OS keychain unavailable: API keys in %s were not migrated. "
-            "Move them to a .env file (see .env.example).",
+            "OS keychain unavailable: API keys in %s were not migrated. Move them to a .env file (see .env.example).",
             source,
         )
         return

@@ -91,9 +91,15 @@ def start_problem(cfg: dict, *, privacy: bool, sandbox_off: str | None) -> str |
 
 
 def _text(result: dict) -> str:
-    """A tools/call result as text: text blocks as they are, anything else named."""
+    """A tools/call result as text: text blocks as they are, anything else named.
+    A malformed result (content as a string, or items that aren't blocks) is read as far as it can be."""
+    content = result.get("content") or []
+    if isinstance(content, str):
+        return content
     parts = []
-    for block in result.get("content") or []:
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict):
+            continue
         if block.get("type") == "text":
             parts.append(str(block.get("text") or ""))
         else:
@@ -124,9 +130,11 @@ class _Stdio:
     def _read(self) -> None:
         for raw in iter(self.proc.stdout.readline, b""):
             try:
-                self.inbox.put(json.loads(raw))
+                message = json.loads(raw)
             except ValueError:
                 continue  # servers may log to stdout; only JSON-RPC counts
+            if isinstance(message, dict):  # a log line can be valid JSON too, like 42 or "ready"
+                self.inbox.put(message)
         self.inbox.put(None)  # the server exited
 
     def _read_errors(self) -> None:
@@ -208,11 +216,35 @@ class _Http:
         except providers.httpx.HTTPError as e:
             raise McpError(f"can't reach it ({type(e).__name__})") from None
 
-    def request(self, message: dict, timeout: float, cancel: threading.Event | None) -> dict:
+    def _post(self, message: dict, timeout: float) -> providers.httpx.Response:
         try:
-            response = self.http.post(self.url, json=message, headers=self._headers(), timeout=timeout)
+            return self.http.post(self.url, json=message, headers=self._headers(), timeout=timeout)
         except providers.httpx.HTTPError as e:
             raise McpError(f"can't reach it ({type(e).__name__})") from None
+
+    def request(self, message: dict, timeout: float, cancel: threading.Event | None) -> dict:
+        if cancel is None:
+            response = self._post(message, timeout)
+        else:
+            # The POST runs on a worker so Stop ends the wait at once; an abandoned
+            # request finishes or times out on its own (closing the client ends it too).
+            done: dict[str, Any] = {}
+
+            def post() -> None:
+                try:
+                    done["response"] = self._post(message, timeout)
+                except (McpError, RuntimeError) as e:  # RuntimeError: the client was closed meanwhile
+                    done["error"] = e
+
+            worker = threading.Thread(target=post, daemon=True)
+            worker.start()
+            while worker.is_alive():
+                if cancel.is_set():
+                    raise McpError("stopped")
+                worker.join(0.2)
+            if "response" not in done:
+                raise McpError(str(done.get("error") or "the request failed"))
+            response = done["response"]
         if response.status_code >= 400:
             raise McpError(f"HTTP {response.status_code}")
         self.session = response.headers.get("mcp-session-id") or self.session

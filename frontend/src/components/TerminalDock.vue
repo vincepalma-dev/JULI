@@ -33,7 +33,7 @@
           <span class="font-sans text-slate-500">{{ c.agent }}</span>
           <span v-if="c.kind === 'tool'" class="badge bg-slate-500/20 font-sans text-slate-300">{{ c.server ? `MCP · ${c.server}` : 'tool' }}</span>
           <span v-else class="badge font-sans" :class="c.sandbox ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'">{{ c.sandbox ? 'sandbox' : 'this machine' }}</span>
-          <span class="badge font-sans" :class="c.status === 'running' ? 'bg-cyan-500/15 text-cyan-200' : c.status === 'passed' || c.status === 'ok' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'">
+          <span class="badge font-sans" :class="c.status === 'running' ? 'bg-cyan-500/15 text-cyan-200' : c.status === 'passed' || c.status === 'ok' ? 'bg-emerald-500/15 text-emerald-300' : c.status === 'denied' || c.status === 'stopped' ? 'bg-slate-500/20 text-slate-300' : 'bg-red-500/15 text-red-300'">
             {{ c.status }}<template v-if="c.exit_code != null"> · exit {{ c.exit_code }}</template><template v-if="c.seconds != null"> · {{ Number(c.seconds).toFixed(1) }} s</template>
           </span>
         </p>

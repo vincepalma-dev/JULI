@@ -24,6 +24,7 @@ import logging
 import re
 import threading
 import time
+import uuid
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -403,6 +404,11 @@ def _max_output(ref: str) -> int:
     return int(MODELS.get(ref, {}).get("max_output", DEFAULT_ANTHROPIC_MAX_OUTPUT))
 
 
+def _call_id() -> str:
+    """An id for a tool call the server sent without one, unique across replies and handoffs."""
+    return f"call_{uuid.uuid4().hex[:16]}"
+
+
 def _function_tools(tools: list[dict]) -> list[dict]:
     return [{"type": "function", "function": t} for t in tools]
 
@@ -462,8 +468,8 @@ def _openai(provider, model, info, key, messages, max_tokens, tools=None) -> Gen
                             if piece.function:
                                 call["name"] += piece.function.name or ""
                                 call["arguments"] += piece.function.arguments or ""
-            for index, call in sorted(calls.items()):
-                yield ToolCall(call["id"] or f"call_{index}", call["name"], call["arguments"])
+            for _, call in sorted(calls.items()):
+                yield ToolCall(call["id"] or _call_id(), call["name"], call["arguments"])
         except openai.APIStatusError as e:
             if tools and _rejects_tools(e.status_code, e.body):
                 raise ToolsUnsupported(provider, redact(_error_message(e.body), key)) from None
@@ -571,7 +577,6 @@ def _ollama(provider, model, info, messages, max_tokens, num_ctx, tools=None) ->
                 if tools and _rejects_tools(response.status_code, error):
                     raise ToolsUnsupported(provider, _error_message(error))
                 raise ProviderError(provider, f"HTTP {response.status_code}: {_error_message(error)}")
-            calls = 0
             for line in response.iter_lines():
                 if not line.strip():
                     continue
@@ -584,9 +589,8 @@ def _ollama(provider, model, info, messages, max_tokens, num_ctx, tools=None) ->
                 for call in message.get("tool_calls") or []:
                     function = call.get("function") or {}
                     arguments = function.get("arguments") or {}
-                    calls += 1
                     yield ToolCall(
-                        call.get("id") or f"call_{calls}",
+                        call.get("id") or _call_id(),
                         function.get("name") or "",
                         arguments if isinstance(arguments, str) else json.dumps(arguments),
                     )

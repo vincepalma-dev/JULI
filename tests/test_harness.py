@@ -1,5 +1,7 @@
 import json
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -561,7 +563,10 @@ def test_ollama_tool_calls(net):
     ]
     net.handler = lambda req: (200, "\n".join(json.dumps(line) for line in lines), {"content-type": "application/x-ndjson"})
     items = list(providers.stream("ollama:qwen3:8b", MESSAGES, tools=TOOLS))
-    assert items[0] == ToolCall("call_1", "read_file", '{"path": "app.py"}')
+    assert (items[0].name, items[0].arguments) == ("read_file", '{"path": "app.py"}')
+    # Ollama sends no ids: each call gets its own, so a nested call can't match its caller's.
+    again = list(providers.stream("ollama:qwen3:8b", MESSAGES, tools=TOOLS))
+    assert items[0].id.startswith("call_") and items[0].id != again[0].id
     sent = json.loads(net.requests[0].content)
     assert sent["tools"][0]["function"]["name"] == "read_file"
     assert sent["messages"][2]["tool_calls"] == [{"function": {"name": "read_file", "arguments": {"path": "app.py"}}}]
@@ -786,6 +791,44 @@ def test_mcp_http_errors(net):
         mcp.Server("x", {"transport": "http", "url": "http://127.0.0.1:1/mcp"}).start(None, {})
 
 
+def test_stop_ends_a_slow_http_mcp_call(net):
+    release = threading.Event()
+
+    def handler(req):
+        body = json.loads(req.content) if req.content else {}
+        if "id" not in body:
+            return 202, "", {}  # a notification, or the closing DELETE
+        if body["method"] == "tools/call":
+            release.wait(10)  # a slow tool
+        return 200, {"jsonrpc": "2.0", "id": body["id"], "result": {"tools": [], "content": []}}, {}
+
+    net.handler = handler
+    server = mcp.Server("slow", {"transport": "http", "url": "http://127.0.0.1:9000/mcp"})
+    server.start(None, {})
+    cancel = threading.Event()
+    threading.Timer(0.3, cancel.set).start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(mcp.McpError, match="stopped"):
+            server.call("wait", {}, cancel)
+        assert time.monotonic() - started < 3
+    finally:
+        release.set()
+        server.close()
+
+
+@pytest.mark.parametrize(
+    "result, text",
+    [
+        ({"content": "plain text"}, "plain text"),
+        ({"content": ["a string", {"type": "text", "text": "kept"}, 3]}, "kept"),
+        ({"content": {"type": "text"}}, ""),
+    ],
+)
+def test_a_malformed_mcp_result_is_read_as_far_as_it_can_be(result, text):
+    assert mcp._text(result) == text
+
+
 # ─── Settings ────────────────────────────────────────────────
 
 
@@ -823,8 +866,10 @@ def test_mcp_settings_validation(client, server):
     assert client.put("/api/settings/mcp", json={"s": server}, headers=AUTH).status_code == 422
 
 
-def test_mcp_server_names_are_checked(client):
-    assert client.put("/api/settings/mcp", json={"Bad Name": {"command": ["x"]}}, headers=AUTH).status_code == 422
+@pytest.mark.parametrize("name", ["Bad Name", "a__b", "a_", "_a", "x" * 25])
+def test_mcp_server_names_are_checked(client, name):
+    assert client.put("/api/settings/mcp", json={name: {"command": ["x"]}}, headers=AUTH).status_code == 422
+    assert client.put("/api/settings/mcp", json={"my_server_2": {"command": ["x"]}}, headers=AUTH).status_code == 200
 
 
 def test_agent_tool_rounds_can_be_set_and_cleared(client):

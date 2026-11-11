@@ -2,6 +2,7 @@
 // fake model server. The tests share one server and run in order.
 import { execFileSync } from 'node:child_process'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 const TOKEN = 'e2e-session'
@@ -204,7 +205,7 @@ test('a token cap stops a local run', async ({ page, request }) => {
 
 test('an MCP tool call asks first and its result reaches the agent', async ({ page, request }) => {
   const python = process.env.JULI_PYTHON || (process.platform === 'win32' ? resolve('../.venv/Scripts/python.exe') : 'python')
-  const server = { transport: 'stdio', command: [python, resolve('../tests/fixtures/mcp_server.py')] }
+  const server = { transport: 'stdio', command: [python, fileURLToPath(new URL('../../tests/fixtures/mcp_server.py', import.meta.url))] }
   // In Privacy Mode a server outside the sandbox doesn't start, so this run is out of it.
   const { run } = await api(request, '/api/settings')
   // Later tests share this server: the settings come back even when an assertion fails.

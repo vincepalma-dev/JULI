@@ -130,8 +130,9 @@ class SandboxSettings(Strict):
     timeout: int = Field(default=120, ge=5, le=3600)  # seconds per command
 
 
-# An MCP server's name: it becomes part of tool names (mcp__<name>__<tool>).
-McpName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,23}$")]
+# An MCP server's name: it becomes part of tool names (mcp__<name>__<tool>), so no
+# double underscore, which would make that split ambiguous ("a__b" + "c" vs "a" + "b__c").
+McpName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$", max_length=24)]
 McpArg = Annotated[str, StringConstraints(min_length=1, max_length=500)]
 EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")]
 McpToolName = Annotated[str, StringConstraints(min_length=1, max_length=128)]

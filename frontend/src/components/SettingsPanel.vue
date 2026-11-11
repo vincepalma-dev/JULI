@@ -262,7 +262,12 @@ watch(() => [props.open, props.settings], () => {
   Object.assign(run, { ...r, budget_usd: r.budget_usd ?? '', token_cap: r.token_cap ?? '', fallback_model: r.fallback_model ?? '' })
   for (const p of Object.keys(allowances)) delete allowances[p]
   for (const [p, v] of Object.entries(r.allowances || {})) allowances[p] = v
-  servers.value = Object.entries(props.settings.mcp_servers || {}).map(([name, cfg]) => serverForm(name, cfg))
+}, { immediate: true })
+
+// The server forms are filled when the panel opens, not on every settings reload:
+// saving another tab reloads the settings, and that mustn't wipe unsaved server edits.
+watch(() => props.open, open => {
+  if (open) servers.value = Object.entries(props.settings.mcp_servers || {}).map(([name, cfg]) => serverForm(name, cfg))
 }, { immediate: true })
 
 const blank = v => v === '' || v == null
@@ -381,7 +386,7 @@ async function saveMcp() {
       const stdio = srv.transport === 'stdio'
       body[name] = {
         transport: srv.transport,
-        command: stdio ? splitArgs(srv.command) : [],
+        command: stdio ? splitArgs(srv.command).filter(a => a !== '') : [], // the API takes no empty arguments
         url: stdio ? null : srv.url.trim(),
         enabled: srv.enabled,
         sandbox: stdio && srv.sandbox,

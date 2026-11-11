@@ -221,6 +221,31 @@ describe('SettingsPanel tools', () => {
     expect(wrapper.find('[role="status"]').text()).toBe('Tools saved')
   })
 
+  it('keeps unsaved server edits when the settings reload after another save', async () => {
+    const wrapper = await openTools({ 'PUT /api/settings/mcp': {} })
+    await tab(wrapper, 'Tools')
+    await wrapper.find('input[id^="mcp-command-"]').setValue('node server.js ""')
+    await wrapper.find('input[id^="mcp-token-"]').setValue('typed-token')
+    await wrapper.setProps({ settings: { ...mcpSettings, run: { ...mcpSettings.run, token_cap: 9 } } })
+    expect(wrapper.find('input[id^="mcp-command-"]').element.value).toBe('node server.js ""')
+    expect(wrapper.find('input[id^="mcp-token-"]').element.value).toBe('typed-token')
+
+    // An empty argument isn't sent: the API takes none.
+    serveApi({ 'PUT /api/settings/mcp': {}, 'PUT /api/settings/mcp/gh/token': { token_hint: '••••oken' } })
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/mcp')[0].gh.command).toEqual(['node', 'server.js'])
+  })
+
+  it('refills the server forms when it opens again', async () => {
+    const wrapper = await openTools()
+    await tab(wrapper, 'Tools')
+    await wrapper.find('input[id^="mcp-command-"]').setValue('changed')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    expect(wrapper.find('input[id^="mcp-command-"]').element.value).toBe('npx -y "gh server"')
+  })
+
   it('removes a server, and refuses nameless or duplicate ones', async () => {
     const wrapper = await openTools({ 'PUT /api/settings/mcp': {} })
     await tab(wrapper, 'Tools')

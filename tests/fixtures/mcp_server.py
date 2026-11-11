@@ -20,7 +20,7 @@ def reply(message_id, result):
     sys.stdout.flush()
 
 
-sys.stdout.write("a log line that isn't JSON-RPC\n")
+sys.stdout.write('a log line that isn\'t JSON-RPC\n42\n"ready"\n[1, 2]\n')  # valid JSON, still not messages
 for line in sys.stdin:
     message = json.loads(line)
     method, message_id = message.get("method"), message.get("id")

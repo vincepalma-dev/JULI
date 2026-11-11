@@ -133,6 +133,10 @@ describe('TerminalDock agent tab', () => {
     expect(first.find('.badge.bg-emerald-500\\/15').exists()).toBe(true)
     expect(second.text()).toContain('MCP · gh')
     expect(second.text()).not.toContain('this machine')
+    // Your own denial isn't an error.
+    const denied = second.findAll('.badge').find(b => b.text().startsWith('denied'))
+    expect(denied.classes()).toContain('text-slate-300')
+    expect(denied.classes()).not.toContain('text-red-300')
   })
 
   it('says what the tab is for when empty, and switches to it when asked', async () => {

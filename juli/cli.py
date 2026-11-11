@@ -31,7 +31,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from juli import config, engine, keystore, providers, store, terminal, workspace
+from juli import config, data, engine, keystore, providers, store, terminal, workspace
 from juli.bus import AgentMessage, message_bus
 from juli.local import catalogue, crew, hardware, ollama
 
@@ -236,6 +236,7 @@ def _drive(run: engine.Run, project_id: str, settings: dict, *, voice: bool, out
 
     result = results[0] if results else engine.RunResult("stopped" if stopped else "error")
     store.finish_run(run_id, result.status, result.tokens_in, result.tokens_out, result.cost_usd)
+    data.apply_retention(settings)
     console.print(f"\n[bold]Run {result.status}[/]  {result.tokens_in} tokens in · {result.tokens_out} out · ${result.cost_usd:.4f}")
     console.print(f"Saved to {save_output(message_bus.history, output_dir)}", highlight=False)
     if result.status == "error":

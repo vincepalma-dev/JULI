@@ -103,7 +103,7 @@
     <ModelsPanel :open="panel === 'models'" :pulls="run.pulls" :providers="providers" @close="panel = null" @changed="loadSettings" />
     <WorkspacePanel :open="panel === 'workspace'" :project-id="activeProjectId" :runs="run.runs.value" :active-run-id="run.activeRunId.value" :live="live" :show-path="showPath" @close="panel = null" />
     <ProjectsPanel :open="panel === 'projects'" :projects="projects" :active-project-id="activeProjectId" @close="panel = null" @create-project="createProject($event, true)" @select-project="selectProject($event, true)" @delete-project="deleteProject" />
-    <SettingsPanel :open="panel === 'settings'" :settings="settings" :providers="providers" :local-models="localModels" @close="panel = null" @saved="loadSettings" />
+    <SettingsPanel :open="panel === 'settings'" :settings="settings" :providers="providers" :local-models="localModels" @close="panel = null" @saved="loadSettings" @data-deleted="startOver" />
 
     <!-- Plan, command and tool approvals also come up as a modal; closing it leaves the card in the run -->
     <dialog ref="decisionDialog" class="modal" aria-label="The run is waiting for you" @close="dismissed = modalDecision?.key || dismissed">
@@ -184,6 +184,29 @@ const settings = ref({ agents: {}, available_models: [], run: {}, mode: 'custom'
 const providers = ref([])
 const installed = ref([])
 const agents = computed(() => settings.value.agents || {})
+
+// After "delete all data". In full: load the dashboard afresh (the session token
+// stays in sessionStorage). In part: the Settings panel stays open with what's
+// left to fix, and the projects and live view refresh in place.
+async function startOver({ reload = true } = {}) {
+  if (reload) {
+    window.location.reload()
+    return
+  }
+  activeProjectId.value = null
+  resumable.value = []
+  filter.value = null
+  run.activeRunId.value = null
+  run.reset()
+  await loadSettings()
+  try {
+    await fetchProjects()
+    if (projects.value.length) await selectProject(projects.value[0].id)
+    else await createProject('My first project')
+  } catch (e) {
+    toastError(e)
+  }
+}
 
 async function loadSettings() {
   try {

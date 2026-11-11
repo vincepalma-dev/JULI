@@ -93,6 +93,18 @@ Loop guards: each agent turn has a limit on tool rounds (25 by default), a reply
 
 Generated files are written only inside the project's workspace (`data/workspace/<project>/`). Every path is resolved and refused if it would land outside. Pushing a commit to a remote always asks first.
 
+### Stored data and how long it's kept
+
+| Data | Where | Kept |
+|---|---|---|
+| Run history: prompts, agent replies, tool and command output, diffs, checkpoints | `data/projects.db` | Until deleted, or the retention period in Settings > Data (30 to 365 days after a run ends). Pruned at startup, after each run and when the setting is saved; a run that hasn't ended is never pruned. |
+| Projects and their files | `data/projects.db`, `data/workspace/` | Until you delete them. Deleting a project keeps its files on disk. |
+| Settings, crew, MCP servers, accepted model licences | `data/settings.json` | Until you change them |
+| API keys and MCP tokens | OS keychain | Until you remove them |
+| Model speed results | `data/projects.db` | Until "delete all data" |
+
+Deleted rows are overwritten in the database file (SQLite `secure_delete`), not left in free pages. **Delete all data** (Settings > Data, after typing a confirmation phrase, and never while a task runs) removes all of the above. It leaves a `.env` file, Ollama models and Docker images, which belong to you or to those tools.
+
 ### Privacy Mode
 
 Privacy Mode is enforced in the code that calls models, not in the dashboard. With it on, any call to a provider whose host isn't local (localhost, loopback or a private LAN address) is refused. In Hybrid and Cloud modes, your prompts and code go to the providers you picked.

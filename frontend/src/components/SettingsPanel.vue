@@ -170,6 +170,41 @@
       </div>
     </form>
 
+    <!-- Data: retention, and deleting everything -->
+    <div v-else-if="tab === 'data'" class="space-y-6">
+      <form class="space-y-3" @submit.prevent="saveRetention">
+        <div>
+          <label for="retention" class="label">Keep run history</label>
+          <select id="retention" v-model="retention" class="field sm:w-72">
+            <option v-for="o in RETENTION" :key="o.days ?? 'forever'" :value="o.days">{{ o.label }}</option>
+          </select>
+          <p class="hint mt-1">Run history is each run's prompt, the agents' replies, tool and command output, diffs and checkpoints. Runs older than this are deleted when you save, when JULI starts and after each run. A run that hasn't ended is never deleted.</p>
+        </div>
+        <ul class="hint list-disc space-y-0.5 pl-5">
+          <li>Projects and their files stay until you delete them. Deleting a project keeps its files on disk.</li>
+          <li>Settings, keys and model speed results stay until you change or remove them.</li>
+        </ul>
+        <div class="flex items-center gap-3">
+          <button type="submit" class="btn btn-primary" :disabled="busy">Save retention</button>
+          <p v-if="notice.data" class="text-sm" :class="notice.data.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.data.text }}</p>
+        </div>
+      </form>
+
+      <form class="space-y-3 rounded-xl border border-red-500/30 bg-red-500/[0.05] p-4" @submit.prevent="deleteAll">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-red-200"><Icon name="trash" class="h-4 w-4" />Delete all data</h3>
+        <p class="text-sm leading-relaxed text-slate-200">This deletes every project and its files, all run history, your settings and crew, and the API keys and MCP tokens JULI saved in the system keychain. It can't be undone: download any project you want to keep first (Workspace &gt; Download zip).</p>
+        <p class="hint">Not touched: a <code class="font-mono">.env</code> file, models downloaded with Ollama, and Docker images. Remove those yourself if you want them gone.</p>
+        <div>
+          <label for="delete-confirm" class="label">Type <span class="font-mono text-slate-200">{{ DELETE_PHRASE }}</span> to confirm</label>
+          <input id="delete-confirm" v-model="deletePhrase" class="field font-mono sm:w-72" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="flex items-center gap-3">
+          <button type="submit" class="btn btn-danger" :disabled="busy || deletePhrase.trim() !== DELETE_PHRASE"><Icon name="trash" class="h-4 w-4" />Delete everything</button>
+          <p v-if="notice.deleteAll" class="text-sm" :class="notice.deleteAll.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.deleteAll.text }}</p>
+        </div>
+      </form>
+    </div>
+
     <!-- Sandbox -->
     <form v-else-if="tab === 'sandbox'" class="space-y-5" @submit.prevent="saveSandbox">
       <div class="surface flex items-start gap-3 p-4" :class="sandbox.active ? '!border-emerald-500/30' : ''">
@@ -219,7 +254,7 @@
 
 <script setup>
 // Run limits, API keys with health badges and allowances, MCP tool servers,
-// the Docker sandbox, and the theme.
+// data retention and deleting all data, the Docker sandbox, and the theme.
 import { ref, reactive, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import SidePanel from './SidePanel.vue'
@@ -233,18 +268,19 @@ const props = defineProps({
   providers: { type: Array, default: () => [] },
   localModels: { type: Array, default: () => [] },
 })
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits(['close', 'saved', 'data-deleted'])
 
 const TABS = [
   { id: 'run', label: 'Run limits' },
   { id: 'keys', label: 'API keys' },
   { id: 'tools', label: 'Tools' },
+  { id: 'data', label: 'Data' },
   { id: 'sandbox', label: 'Sandbox' },
   { id: 'theme', label: 'Theme' },
 ]
 const tab = ref('run')
 const busy = ref(false)
-const notice = reactive({ run: null, keys: null, tools: null, sandbox: null })
+const notice = reactive({ run: null, keys: null, tools: null, data: null, deleteAll: null, sandbox: null })
 
 // ─── Run limits ───
 const run = reactive({})
@@ -404,6 +440,53 @@ async function saveMcp() {
     }
     return 'Tools saved'
   })
+}
+
+// ─── Data ───
+const RETENTION = [
+  { days: null, label: 'Until I delete it' },
+  { days: 30, label: '30 days after a run ends' },
+  { days: 90, label: '90 days after a run ends' },
+  { days: 180, label: '180 days after a run ends' },
+  { days: 365, label: '1 year after a run ends' },
+]
+const DELETE_PHRASE = 'delete all data'
+const retention = ref(null)
+const deletePhrase = ref('')
+
+watch(() => props.open, open => {
+  if (!open) return
+  retention.value = props.settings.data?.retention_days ?? null
+  deletePhrase.value = ''
+}, { immediate: true })
+
+async function saveRetention() {
+  await act('data', async () => {
+    const res = await apiFetch('/api/settings/data', { method: 'PUT', body: { retention_days: retention.value } })
+    const n = res.deleted_runs || 0
+    return n ? `Saved. ${n} older run${n === 1 ? ' was' : 's were'} deleted.` : 'Saved'
+  })
+}
+
+async function deleteAll() {
+  busy.value = true
+  notice.deleteAll = null
+  try {
+    const res = await apiFetch('/api/data/delete-all', { method: 'POST', body: { confirm: DELETE_PHRASE } })
+    deletePhrase.value = ''
+    if (res.problems?.length) {
+      // Stay here so the user can read what's left, fix it and try again.
+      notice.deleteAll = { ok: false, text: `Mostly deleted. ${res.problems.join(' ')}` }
+      emit('data-deleted', { reload: false }) // the dashboard refreshes in place
+    } else {
+      notice.deleteAll = { ok: true, text: 'Everything is deleted.' }
+      emit('data-deleted', { reload: true }) // the dashboard starts over
+    }
+  } catch (e) {
+    notice.deleteAll = { ok: false, text: e.message }
+  } finally {
+    busy.value = false
+  }
 }
 
 // ─── Sandbox ───

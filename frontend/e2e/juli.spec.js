@@ -190,6 +190,7 @@ test('a token cap stops a local run', async ({ page, request }) => {
   await panel(page, 'Settings')
   await page.fill('#tokencap', '250')
   await page.getByRole('button', { name: 'Save limits' }).click()
+  await expect(page.getByText('Limits saved')).toBeVisible() // saved before the run reads the settings
   await closePanel(page)
   await startTask(page, 'Run into the token cap.')
   expect((await finish(page, request, 'Deny')).status).toBe('stopped')
@@ -198,6 +199,7 @@ test('a token cap stops a local run', async ({ page, request }) => {
   await panel(page, 'Settings')
   await page.fill('#tokencap', '')
   await page.getByRole('button', { name: 'Save limits' }).click()
+  await expect.poll(async () => (await api(request, '/api/settings')).run.token_cap).toBe(null)
 })
 
 test('an MCP tool call asks first and its result reaches the agent', async ({ page, request }) => {

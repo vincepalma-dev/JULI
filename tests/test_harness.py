@@ -58,7 +58,7 @@ def project():
     store.init_db()
     pid = store.create_project("P")["id"]
     base = workspace.ensure(pid)
-    (base / "app.py").write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    (base / "app.py").write_bytes(b"def add(a, b):\n    return a - b\n")  # bytes: the same size on every OS
     return pid
 
 
@@ -429,8 +429,8 @@ def test_search_skips_binary_and_dependency_folders(project):
 
 
 def test_list_files(project):
-    assert tools.list_files(project) == "app.py  (34 bytes)"
-    assert tools.list_files(project, "./") == "app.py  (34 bytes)"
+    assert tools.list_files(project) == "app.py  (32 bytes)"
+    assert tools.list_files(project, "./") == "app.py  (32 bytes)"
 
 
 def test_check_args():

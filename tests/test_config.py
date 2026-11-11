@@ -81,6 +81,8 @@ def test_run_settings_roundtrip(client):
         "fallback_model": "ollama:qwen3:8b",
         "discussion_rounds": 2,
         "allowances": {"openai": 20},
+        "max_tool_rounds": 40,
+        "max_handoffs": 0,
     }
     assert client.put("/api/settings/run", json=run, headers=AUTH).status_code == 200
     assert client.get("/api/settings", headers=AUTH).json()["run"] == {**run, "allowances": {"openai": 20.0}}

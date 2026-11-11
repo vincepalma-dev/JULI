@@ -20,14 +20,16 @@ jobs:
       OLLAMA_VERSION: 0.24.0
       OLLAMA_SHA256: 15c5f8d66ba06e0d3b4719df8868612dbd66e14e82760929bb3552e1657cdcdb
       MODEL: qwen3:1.7b  # 1.4 GB, Apache-2.0: no licence to accept
-      JULI_DATA_DIR: ${{ runner.temp }}/juli
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false  # no job pushes
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: pyproject.toml
+      - run: echo "JULI_DATA_DIR=$RUNNER_TEMP/juli" >> "$GITHUB_ENV"  # runner.temp isn't allowed in job env
       - run: python -m pip install -e .
 
       - name: Install and start Ollama
@@ -66,6 +68,24 @@ jobs:
           juli mode privacy
           juli run "Write a Python function add(a, b) that returns the sum, with one pytest test." --plan --discuss 0 -o "$RUNNER_TEMP/out"
           ls -l "$RUNNER_TEMP/out"
+
+      # The reviewer gets read-only tools; a small model may still answer without
+      # calling one, so that is a warning, while a failed run fails the job.
+      - name: A tool-calling run on the real model
+        run: |
+          juli run "Read README.md with the read_file tool, then review it in two sentences." --review -o "$RUNNER_TEMP/out"
+          python - <<'EOF'
+          import sqlite3
+          from juli import config
+
+          with sqlite3.connect(config.db_path()) as db:
+              (run_id, status), = db.execute("SELECT id, status FROM runs ORDER BY id DESC LIMIT 1")
+              tools = db.execute("SELECT content FROM messages WHERE run_id = ? AND message_type = 'tool'", (run_id,)).fetchall()
+          print(f"Run {run_id}: {status}, {len(tools)} tool call(s): {[t[0] for t in tools]}")
+          assert status == "complete", status
+          if not tools:
+              print("::warning::The model answered without calling a tool")
+          EOF
 
       - if: failure()
         run: tail -n 100 "$RUNNER_TEMP/ollama.log"

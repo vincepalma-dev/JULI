@@ -22,6 +22,19 @@
         </div>
       </div>
 
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label for="rounds" class="label">Tool rounds per agent turn</label>
+          <input id="rounds" v-model="run.max_tool_rounds" type="number" min="1" max="100" step="1" inputmode="numeric" class="field" />
+          <p class="hint mt-1">A loop guard: after this many rounds of tool use, the agent has to answer. An agent can have its own in the crew settings.</p>
+        </div>
+        <div>
+          <label for="handoffs" class="label">Handoffs per run</label>
+          <input id="handoffs" v-model="run.max_handoffs" type="number" min="0" max="50" step="1" inputmode="numeric" class="field" />
+          <p class="hint mt-1">How often agents may hand work to a colleague in one run. 0 turns handoffs off.</p>
+        </div>
+      </div>
+
       <div>
         <label for="discuss" class="label">Crew discussion of the plan</label>
         <select id="discuss" v-model.number="run.discussion_rounds" class="field sm:w-60">
@@ -85,6 +98,78 @@
       </div>
     </form>
 
+    <!-- Tools: MCP servers -->
+    <form v-else-if="tab === 'tools'" class="space-y-5" @submit.prevent="saveMcp">
+      <p class="hint">Agents read, search and write the project's files, run checks and hand work to each other with built-in tools. MCP servers add more. Every MCP call asks you first, unless you trust that tool and its server runs in the sandbox or over HTTP. In Privacy Mode, only sandboxed servers and HTTP servers on this machine or your network are used.</p>
+      <div v-for="srv in servers" :key="srv.uid" class="surface space-y-3 p-4">
+        <div class="flex flex-wrap items-end gap-3">
+          <div class="min-w-0 flex-1">
+            <label :for="`mcp-name-${srv.uid}`" class="label">Name</label>
+            <input :id="`mcp-name-${srv.uid}`" v-model="srv.name" maxlength="24" class="field font-mono" placeholder="github" spellcheck="false" autocomplete="off" />
+          </div>
+          <div>
+            <label :for="`mcp-transport-${srv.uid}`" class="label">Connects over</label>
+            <select :id="`mcp-transport-${srv.uid}`" v-model="srv.transport" class="field">
+              <option value="stdio">A program (stdio)</option>
+              <option value="http">HTTP</option>
+            </select>
+          </div>
+          <label class="flex min-h-10 cursor-pointer items-center gap-2 text-sm text-slate-200">
+            <input v-model="srv.enabled" type="checkbox" class="h-4 w-4 accent-cyan-500" />
+            On
+          </label>
+          <button type="button" class="icon-btn hover:!text-red-300" :aria-label="`Remove ${srv.name || 'this server'}`" @click="removeServer(srv)"><Icon name="trash" class="h-4 w-4" /></button>
+        </div>
+
+        <template v-if="srv.transport === 'stdio'">
+          <div>
+            <label :for="`mcp-command-${srv.uid}`" class="label">Command</label>
+            <input :id="`mcp-command-${srv.uid}`" v-model="srv.command" class="field font-mono" placeholder="npx -y @modelcontextprotocol/server-memory" spellcheck="false" autocomplete="off" />
+          </div>
+          <label class="flex cursor-pointer items-start gap-2 text-sm text-slate-200">
+            <input v-model="srv.sandbox" type="checkbox" class="mt-0.5 h-4 w-4 accent-cyan-500" />
+            <span>Run it in the Docker sandbox (no network, only the project folder). The sandbox image must already have what it needs.</span>
+          </label>
+        </template>
+        <div v-else>
+          <label :for="`mcp-url-${srv.uid}`" class="label">URL</label>
+          <input :id="`mcp-url-${srv.uid}`" v-model="srv.url" type="url" class="field font-mono" placeholder="http://127.0.0.1:8000/mcp" spellcheck="false" autocomplete="off" />
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label :for="`mcp-token-${srv.uid}`" class="label">{{ srv.token_hint ? `Token (saved: ${srv.token_hint})` : 'Token (optional)' }}</label>
+            <input :id="`mcp-token-${srv.uid}`" v-model="srv.token" type="password" maxlength="500" class="field font-mono" :placeholder="srv.token_hint ? 'Saved' : 'Kept in your keychain'" autocomplete="off" spellcheck="false" />
+          </div>
+          <div v-if="srv.transport === 'stdio'">
+            <label :for="`mcp-env-${srv.uid}`" class="label">Pass the token as</label>
+            <input :id="`mcp-env-${srv.uid}`" v-model="srv.token_env" maxlength="64" class="field font-mono" placeholder="GITHUB_TOKEN" spellcheck="false" autocomplete="off" />
+          </div>
+        </div>
+
+        <div>
+          <label :for="`mcp-trusted-${srv.uid}`" class="label">Trusted tools (no approval)</label>
+          <input :id="`mcp-trusted-${srv.uid}`" v-model="srv.trusted" class="field font-mono" placeholder="search, read_page" spellcheck="false" autocomplete="off" />
+          <p class="hint mt-1">Comma-separated. Only applies when the server is sandboxed or over HTTP; otherwise every call still asks.</p>
+        </div>
+
+        <fieldset>
+          <legend class="label">Roles that get its tools (none ticked: every role)</legend>
+          <div class="flex flex-wrap gap-x-4 gap-y-2">
+            <label v-for="r in ROLES" :key="r" class="flex cursor-pointer items-center gap-1.5 text-sm text-slate-200">
+              <input v-model="srv.roles" type="checkbox" :value="r" class="h-4 w-4 accent-cyan-500" />{{ r }}
+            </label>
+          </div>
+        </fieldset>
+      </div>
+      <p v-if="!servers.length" class="text-sm text-slate-400">No MCP servers yet.</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="button" class="btn btn-secondary" @click="addServer"><Icon name="plus" class="h-4 w-4" />Add MCP server</button>
+        <button type="submit" class="btn btn-primary" :disabled="busy">Save tools</button>
+        <p v-if="notice.tools" class="text-sm" :class="notice.tools.ok ? 'text-emerald-300' : 'text-red-300'" role="status">{{ notice.tools.text }}</p>
+      </div>
+    </form>
+
     <!-- Sandbox -->
     <form v-else-if="tab === 'sandbox'" class="space-y-5" @submit.prevent="saveSandbox">
       <div class="surface flex items-start gap-3 p-4" :class="sandbox.active ? '!border-emerald-500/30' : ''">
@@ -133,12 +218,14 @@
 </template>
 
 <script setup>
-// Run limits, API keys with health badges and allowances, the Docker sandbox, and the theme.
+// Run limits, API keys with health badges and allowances, MCP tool servers,
+// the Docker sandbox, and the theme.
 import { ref, reactive, computed, watch } from 'vue'
 import Icon from './Icon.vue'
 import SidePanel from './SidePanel.vue'
 import { apiFetch } from '../api.js'
 import { THEMES, applyTheme, savedThemeId } from '../theme.js'
+import { ROLES, joinArgs, splitArgs } from '../labels.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -151,12 +238,13 @@ const emit = defineEmits(['close', 'saved'])
 const TABS = [
   { id: 'run', label: 'Run limits' },
   { id: 'keys', label: 'API keys' },
+  { id: 'tools', label: 'Tools' },
   { id: 'sandbox', label: 'Sandbox' },
   { id: 'theme', label: 'Theme' },
 ]
 const tab = ref('run')
 const busy = ref(false)
-const notice = reactive({ run: null, keys: null, sandbox: null })
+const notice = reactive({ run: null, keys: null, tools: null, sandbox: null })
 
 // ─── Run limits ───
 const run = reactive({})
@@ -164,6 +252,9 @@ const keys = reactive({})
 const show = reactive({})
 const allowances = reactive({})
 const results = reactive({}) // provider -> last health check
+// The Tools tab's forms; declared here because the watcher below fills them at once when open.
+const servers = ref([])
+let nextUid = 0
 
 watch(() => [props.open, props.settings], () => {
   if (!props.open) return
@@ -171,6 +262,12 @@ watch(() => [props.open, props.settings], () => {
   Object.assign(run, { ...r, budget_usd: r.budget_usd ?? '', token_cap: r.token_cap ?? '', fallback_model: r.fallback_model ?? '' })
   for (const p of Object.keys(allowances)) delete allowances[p]
   for (const [p, v] of Object.entries(r.allowances || {})) allowances[p] = v
+}, { immediate: true })
+
+// The server forms are filled when the panel opens, not on every settings reload:
+// saving another tab reloads the settings, and that mustn't wipe unsaved server edits.
+watch(() => props.open, open => {
+  if (open) servers.value = Object.entries(props.settings.mcp_servers || {}).map(([name, cfg]) => serverForm(name, cfg))
 }, { immediate: true })
 
 const blank = v => v === '' || v == null
@@ -188,6 +285,8 @@ function runBody() {
     fallback_model: run.fallback_model ? run.fallback_model.trim() : null,
     discussion_rounds: Number(run.discussion_rounds) || 0,
     allowances: allowanceMap(),
+    max_tool_rounds: blank(run.max_tool_rounds) ? 25 : Math.round(Number(run.max_tool_rounds)),
+    max_handoffs: blank(run.max_handoffs) ? 12 : Math.round(Number(run.max_handoffs)),
   }
 }
 
@@ -248,6 +347,62 @@ async function removeKey(id) {
     await apiFetch(`/api/settings/keys/${encodeURIComponent(id)}`, { method: 'DELETE' })
     delete results[id]
     return 'Key removed from the keychain'
+  })
+}
+
+// ─── Tools: MCP servers ───
+function serverForm(name, cfg = {}) {
+  return {
+    uid: ++nextUid,
+    name,
+    transport: cfg.transport || 'stdio',
+    command: joinArgs(cfg.command || []),
+    url: cfg.url || '',
+    enabled: cfg.enabled !== false,
+    sandbox: Boolean(cfg.sandbox),
+    trusted: (cfg.trusted_tools || []).join(', '),
+    roles: [...(cfg.roles || [])],
+    token_env: cfg.token_env || '',
+    token: '',
+    token_hint: cfg.token_hint || '',
+  }
+}
+
+function addServer() {
+  servers.value.push(serverForm(''))
+}
+
+function removeServer(srv) {
+  servers.value = servers.value.filter(s => s !== srv)
+}
+
+async function saveMcp() {
+  await act('tools', async () => {
+    const body = {}
+    for (const srv of servers.value) {
+      const name = srv.name.trim()
+      if (!name) throw new Error('Give every server a name')
+      if (body[name]) throw new Error(`Two servers are called ${name}`)
+      const stdio = srv.transport === 'stdio'
+      body[name] = {
+        transport: srv.transport,
+        command: stdio ? splitArgs(srv.command).filter(a => a !== '') : [], // the API takes no empty arguments
+        url: stdio ? null : srv.url.trim(),
+        enabled: srv.enabled,
+        sandbox: stdio && srv.sandbox,
+        trusted_tools: srv.trusted.split(',').map(t => t.trim()).filter(Boolean),
+        roles: srv.roles.length ? srv.roles : null,
+        token_env: stdio && srv.token_env.trim() ? srv.token_env.trim() : null,
+      }
+    }
+    await apiFetch('/api/settings/mcp', { method: 'PUT', body })
+    for (const srv of servers.value) {
+      if (!srv.token.trim()) continue
+      const saved = await apiFetch(`/api/settings/mcp/${encodeURIComponent(srv.name.trim())}/token`, { method: 'PUT', body: { token: srv.token.trim() } })
+      srv.token = ''
+      srv.token_hint = saved.token_hint
+    }
+    return 'Tools saved'
   })
 }
 

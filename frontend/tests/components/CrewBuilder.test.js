@@ -80,6 +80,26 @@ describe('CrewBuilder agents', () => {
     expect(sent('PUT', '/api/settings/agents')).toEqual([{ Coder: { max_tokens: null } }])
   })
 
+  it("saves and clears an agent's tool rounds", async () => {
+    const wrapper = open({ 'PUT /api/settings/agents': {} })
+    await wrapper.find('#rounds-Coder').setValue('7')
+    await flushPromises()
+    await wrapper.find('#rounds-Coder').setValue('')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/agents')).toEqual([{ Coder: { max_tool_rounds: 7 } }, { Coder: { max_tool_rounds: null } }])
+  })
+
+  it('refuses tool rounds outside 1 to 100 with a message, without saving', async () => {
+    const wrapper = open({ 'PUT /api/settings/agents': {} })
+    for (const value of ['0', '101', '2.5']) {
+      await wrapper.find('#rounds-Coder').setValue(value)
+      await flushPromises()
+      expect(wrapper.find('#rounds-Coder').element.value).toBe(value)
+      expect(wrapper.find('[role="status"]').text()).toBe('Tool rounds must be a whole number from 1 to 100')
+    }
+    expect(sent('PUT', '/api/settings/agents')).toEqual([])
+  })
+
   it('saves the title, colour and prompt', async () => {
     const wrapper = open({ 'PUT /api/settings/agents': {} })
     await wrapper.find('#title-Coder').setValue(' Lead dev ')

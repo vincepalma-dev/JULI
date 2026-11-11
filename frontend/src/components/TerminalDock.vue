@@ -25,14 +25,15 @@
 
     <!-- Live agent commands -->
     <div v-show="tab === 'agent'" ref="agentLog" class="min-h-0 flex-1 overflow-y-auto px-3 py-2 font-mono text-xs" aria-live="polite">
-      <p v-if="!commands.length" class="py-2 font-sans text-sm text-slate-400">Commands the agents run (tests, linters) stream here. Each one that isn't safe to run on its own asks you first.</p>
+      <p v-if="!commands.length" class="py-2 font-sans text-sm text-slate-400">Commands the agents run (tests, linters) and the tools they use stream here. Each command that isn't safe to run on its own asks you first.</p>
       <div v-for="c in commands" :key="c.key" class="mb-3">
         <p class="flex flex-wrap items-center gap-2 text-slate-200">
-          <span class="text-cyan-300">$</span>
+          <span class="text-cyan-300">{{ c.kind === 'tool' ? '›' : '$' }}</span>
           <span class="break-all">{{ c.command }}</span>
           <span class="font-sans text-slate-500">{{ c.agent }}</span>
-          <span class="badge font-sans" :class="c.sandbox ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'">{{ c.sandbox ? 'sandbox' : 'this machine' }}</span>
-          <span class="badge font-sans" :class="c.status === 'running' ? 'bg-cyan-500/15 text-cyan-200' : c.status === 'passed' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-red-500/15 text-red-300'">
+          <span v-if="c.kind === 'tool'" class="badge bg-slate-500/20 font-sans text-slate-300">{{ c.server ? `MCP · ${c.server}` : 'tool' }}</span>
+          <span v-else class="badge font-sans" :class="c.sandbox ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'">{{ c.sandbox ? 'sandbox' : 'this machine' }}</span>
+          <span class="badge font-sans" :class="c.status === 'running' ? 'bg-cyan-500/15 text-cyan-200' : c.status === 'passed' || c.status === 'ok' ? 'bg-emerald-500/15 text-emerald-300' : c.status === 'denied' || c.status === 'stopped' ? 'bg-slate-500/20 text-slate-300' : 'bg-red-500/15 text-red-300'">
             {{ c.status }}<template v-if="c.exit_code != null"> · exit {{ c.exit_code }}</template><template v-if="c.seconds != null"> · {{ Number(c.seconds).toFixed(1) }} s</template>
           </span>
         </p>
@@ -44,7 +45,7 @@
 
 <script setup>
 // The bottom dock. Terminal: the user's own shell in the project's workspace
-// over /ws/terminal (xterm.js). Agent: the agents' commands as they run.
+// over /ws/terminal (xterm.js). Agent: the agents' commands and tool calls as they run.
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'

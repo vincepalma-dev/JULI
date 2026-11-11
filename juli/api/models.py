@@ -5,7 +5,7 @@ Pydantic models for the JULI API. Request models reject unknown fields.
 from enum import Enum
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 AgentName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z][A-Za-z0-9_]{0,39}$")]
 ProviderId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}$")]
@@ -16,6 +16,7 @@ Icon = Annotated[str, StringConstraints(pattern=r"^[a-z_]{1,32}$")]
 ModelRef = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}:[^\s]{1,200}$")]
 Role = Literal["planner", "coder", "reviewer", "tester", "docs", "custom"]
 MaxTokens = Annotated[int, Field(ge=1, le=200_000)]
+ToolRounds = Annotated[int, Field(ge=1, le=100)]  # tool rounds per agent turn
 AgentPrompt = Annotated[str, StringConstraints(max_length=8000)]
 JobTitle = Annotated[str, StringConstraints(max_length=80)]
 # An Ollama model: library (qwen3:8b), namespaced (user/model:tag) or Hugging Face (hf.co/owner/repo:Q4_K_M).
@@ -51,7 +52,7 @@ UserMessage = Annotated[str, StringConstraints(min_length=1, max_length=4000)]
 class Decision(Strict):
     """The answer to a paused run's decision event."""
 
-    action: Literal["approve", "revise", "switch", "stop", "deny"]  # deny: an agent command
+    action: Literal["approve", "revise", "switch", "stop", "deny"]  # deny: an agent command or MCP tool call
     model: ModelRef | None = None  # for switch
     message: UserMessage | None = None  # for revise: what to change in the plan
 
@@ -82,6 +83,7 @@ class AgentUpdate(Strict):
     icon: Icon | None = None
     job_title: JobTitle | None = None
     max_tokens: MaxTokens | None = None  # null clears it
+    max_tool_rounds: ToolRounds | None = None  # null: the run setting
 
 
 class AgentCreate(Strict):
@@ -93,6 +95,7 @@ class AgentCreate(Strict):
     icon: Icon = "system"
     job_title: JobTitle = ""
     max_tokens: MaxTokens | None = None
+    max_tool_rounds: ToolRounds | None = None
 
 
 class RunSettings(Strict):
@@ -105,6 +108,8 @@ class RunSettings(Strict):
     fallback_model: ModelRef | None = None
     discussion_rounds: int = Field(default=0, ge=0, le=4)
     allowances: dict[ProviderId, Annotated[float, Field(gt=0, le=10_000)]] = {}
+    max_tool_rounds: ToolRounds = 25  # a loop guard per agent turn
+    max_handoffs: int = Field(default=12, ge=0, le=50)  # per run; 0 turns handoffs off
 
 
 class ResumeRequest(Strict):
@@ -123,6 +128,42 @@ class SandboxSettings(Strict):
     enabled: bool = False
     image: DockerImage = "python:3.12-slim"
     timeout: int = Field(default=120, ge=5, le=3600)  # seconds per command
+
+
+# An MCP server's name: it becomes part of tool names (mcp__<name>__<tool>), so no
+# double underscore, which would make that split ambiguous ("a__b" + "c" vs "a" + "b__c").
+McpName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$", max_length=24)]
+McpArg = Annotated[str, StringConstraints(min_length=1, max_length=500)]
+EnvName = Annotated[str, StringConstraints(pattern=r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")]
+McpToolName = Annotated[str, StringConstraints(min_length=1, max_length=128)]
+
+
+class McpServer(Strict):
+    """A Model Context Protocol server. Its token, if any, is kept in the keychain, never here."""
+
+    transport: Literal["stdio", "http"] = "stdio"
+    command: list[McpArg] = Field(default=[], max_length=50)  # stdio: the program and its arguments
+    url: str | None = Field(default=None, min_length=1, max_length=500)  # http
+    enabled: bool = True
+    sandbox: bool = False  # stdio: run it in the Docker sandbox (no network)
+    trusted_tools: list[McpToolName] = Field(default=[], max_length=100)  # skip Approve/Deny (sandboxed or HTTP servers only)
+    roles: list[Role] | None = None  # None: every role
+    token_env: EnvName | None = None  # stdio: the variable that gets the token
+
+    @model_validator(mode="after")
+    def _fits_transport(self) -> "McpServer":
+        if self.transport == "stdio" and not self.command:
+            raise ValueError("A stdio server needs a command")
+        if self.transport == "http" and not (self.url and self.url.startswith(("http://", "https://"))):
+            raise ValueError("An http server needs an http:// or https:// URL")
+        return self
+
+
+McpServers = dict[McpName, McpServer]
+
+
+class McpToken(Strict):
+    token: ApiKey
 
 
 class PushRequest(Strict):

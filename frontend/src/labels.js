@@ -29,6 +29,30 @@ export function workingPhrase(turn, agents = {}) {
   }
 }
 
+/** The live line for a tool call, from its summary ("read_file src/app.py"). */
+export function toolPhrase(summary) {
+  const [name, ...rest] = String(summary || '').split(' ')
+  const arg = rest.join(' ')
+  switch (name) {
+    case 'read_file': return `Reading ${arg}…`
+    case 'list_files': return arg ? `Looking in ${arg}…` : 'Looking through the files…'
+    case 'search_files': return `Searching for “${arg}”…`
+    case 'handoff': return `Handing off to ${arg}…`
+    default: {
+      const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
+      return mcp ? `Using ${mcp[2]} from ${mcp[1]}…` : `Using ${name}…`
+    }
+  }
+}
+
+/** The icon for a tool call. */
+export function toolIcon(tool) {
+  if (tool === 'read_file' || tool === 'list_files') return 'file'
+  if (tool === 'search_files') return 'search'
+  if (tool === 'handoff') return 'arrows'
+  return 'wrench'
+}
+
 /** Which mascot loop fits a turn. `streaming`: text has started to arrive. */
 export function turnMascot(turn, streaming) {
   if (turn.activity === 'discussing the plan') return 'discussion'
@@ -89,4 +113,44 @@ export function splitRef(ref) {
 const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g // eslint-disable-line no-control-regex
 export function stripAnsi(text) {
   return String(text || '').replace(ANSI, '')
+}
+
+/**
+ * "npx -y 'a b'" -> ["npx", "-y", "a b"]: spaces split, quotes group, and
+ * quoted parts join the text next to them. Single quotes are literal; inside
+ * double quotes, \" and \\ are escapes. A bare backslash stays (Windows paths).
+ */
+export function splitArgs(text) {
+  const s = String(text)
+  const args = []
+  let arg = null
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]
+    if (/\s/.test(c)) {
+      if (arg !== null) args.push(arg)
+      arg = null
+      continue
+    }
+    arg ??= ''
+    if (c === "'") {
+      const end = s.indexOf("'", i + 1)
+      const stop = end < 0 ? s.length : end
+      arg += s.slice(i + 1, stop)
+      i = stop
+    } else if (c === '"') {
+      for (i++; i < s.length && s[i] !== '"'; i++) {
+        if (s[i] === '\\' && (s[i + 1] === '"' || s[i + 1] === '\\')) i++
+        arg += s[i]
+      }
+    } else {
+      arg += c
+    }
+  }
+  if (arg !== null) args.push(arg)
+  return args
+}
+
+/** The reverse of splitArgs: an argument that's empty or has spaces or quotes is double-quoted, with \ and " escaped. */
+export function joinArgs(args) {
+  return args.map(a => (a === '' || /[\s"']/.test(a) ? `"${a.replace(/[\\"]/g, '\\$&')}"` : a)).join(' ')
 }

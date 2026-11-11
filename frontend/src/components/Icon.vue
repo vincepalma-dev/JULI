@@ -68,6 +68,8 @@ const ICONS = {
   copy: ['M9 9h10v11H9zM5 15V4h10'],
   bolt: ['M13 3L5 13.5h6L10 21l8-10.5h-6z'],
   gauge: ['M4.5 17a8.5 8.5 0 1 1 15 0M12 13l4-4'],
+  search: [circle(11, 11, 6), 'M20 20l-4.6-4.6'],
+  wrench: ['M14.7 6.3a4 4 0 0 0-5.3 5.3L4 17l3 3 5.4-5.4a4 4 0 0 0 5.3-5.3l-2.5 2.5-2.4-.4-.4-2.4z'],
 }
 
 const paths = computed(() => ICONS[props.name] || ICONS.info)

@@ -187,7 +187,7 @@ def _is_link(path: Path) -> bool:
     return path.is_symlink() or os.path.normcase(path.resolve()) != os.path.normcase(path.absolute())
 
 
-def _walk(base: Path, skip: set[str] | frozenset[str] = frozenset()) -> Iterator[tuple[str, Path]]:
+def walk(base: Path, skip: set[str] | frozenset[str] = frozenset()) -> Iterator[tuple[str, Path]]:
     """(relative path, path) of every regular file, skipping .git and links."""
     base = base.resolve()
     for dirpath, dirnames, filenames in os.walk(base):
@@ -204,7 +204,7 @@ def tree(project_id: str) -> list[dict]:
     if not base.is_dir():
         return []
     files = []
-    for rel, path in _walk(base):
+    for rel, path in walk(base):
         files.append({"path": rel, "size": path.stat().st_size})
         if len(files) >= MAX_TREE_FILES:
             break
@@ -256,7 +256,7 @@ def zip_tree(project_id: str) -> bytes:
     base = root(project_id)
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         if base.is_dir():
-            for rel, path in _walk(base):
+            for rel, path in walk(base):
                 zf.write(path, rel)
     return buffer.getvalue()
 
@@ -268,7 +268,7 @@ def review_text(project_id: str) -> str:
         return ""
     parts: list[str] = []
     total = 0
-    for rel, path in _walk(base, NOT_REVIEWED):
+    for rel, path in walk(base, NOT_REVIEWED):
         if path.stat().st_size > MAX_FILE_BYTES:
             continue
         try:

@@ -35,6 +35,7 @@ describe('SettingsPanel run limits', () => {
     await flushPromises()
     expect(sent('PUT', '/api/settings/run')).toEqual([{
       budget_usd: 1.5, token_cap: null, privacy_mode: false, auto_fallback: false, fallback_model: null, discussion_rounds: 2, allowances: { openai: 20 },
+      max_tool_rounds: 25, max_handoffs: 12,
     }])
     expect(wrapper.find('[role="status"]').text()).toBe('Limits saved')
     expect(wrapper.emitted('saved')).toHaveLength(1)
@@ -159,5 +160,109 @@ describe('SettingsPanel theme', () => {
     restoreTheme()
     expect(document.documentElement.style.getPropertyValue('--color-juli-accent')).toBe('#7c8aff')
     localStorage.clear()
+  })
+})
+
+describe('SettingsPanel tools', () => {
+  const mcpSettings = {
+    ...settings,
+    run: { ...settings.run, max_tool_rounds: 30, max_handoffs: 4 },
+    mcp_servers: {
+      gh: { transport: 'stdio', command: ['npx', '-y', 'gh server'], enabled: true, sandbox: false, trusted_tools: ['search'], roles: ['coder'], token_env: 'GH_TOKEN', token_hint: '••••wxyz' },
+    },
+  }
+  async function openTools(routes = {}) {
+    serveApi(routes)
+    const wrapper = mount(SettingsPanel, { props: { open: false, settings: mcpSettings, providers, localModels: [] }, attachTo: document.body })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('mounts already open with its servers', () => {
+    serveApi({})
+    const wrapper = mount(SettingsPanel, { props: { open: true, settings: mcpSettings, providers, localModels: [] } })
+    expect(wrapper.find('#rounds').element.value).toBe('30')
+  })
+
+  it('shows the run limits for tools and handoffs', async () => {
+    const wrapper = await openTools({ 'PUT /api/settings/run': {} })
+    expect(wrapper.find('#rounds').element.value).toBe('30')
+    await wrapper.find('#handoffs').setValue('0')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/run')[0]).toMatchObject({ max_tool_rounds: 30, max_handoffs: 0 })
+  })
+
+  it('shows a saved server without its token, and saves edits and a new server', async () => {
+    const wrapper = await openTools({ 'PUT /api/settings/mcp': {}, 'PUT /api/settings/mcp/docs/token': { token_hint: '••••1234' } })
+    await tab(wrapper, 'Tools')
+    const name = wrapper.find('input[id^="mcp-name-"]')
+    expect(name.element.value).toBe('gh')
+    expect(wrapper.find('input[id^="mcp-command-"]').element.value).toBe('npx -y "gh server"')
+    expect(wrapper.text()).toContain('Token (saved: ••••wxyz)')
+    expect(wrapper.find('input[id^="mcp-token-"]').element.value).toBe('')
+
+    await button(wrapper, 'Add MCP server').trigger('click')
+    const names = wrapper.findAll('input[id^="mcp-name-"]')
+    await names[1].setValue('docs')
+    await wrapper.findAll('select[id^="mcp-transport-"]')[1].setValue('http')
+    await wrapper.find('input[id^="mcp-url-"]').setValue(' http://127.0.0.1:9000/mcp ')
+    await wrapper.findAll('input[id^="mcp-token-"]')[1].setValue('secret1234')
+    await wrapper.findAll('input[id^="mcp-trusted-"]')[1].setValue('lookup, , find')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(sent('PUT', '/api/settings/mcp')).toEqual([{
+      gh: { transport: 'stdio', command: ['npx', '-y', 'gh server'], url: null, enabled: true, sandbox: false, trusted_tools: ['search'], roles: ['coder'], token_env: 'GH_TOKEN' },
+      docs: { transport: 'http', command: [], url: 'http://127.0.0.1:9000/mcp', enabled: true, sandbox: false, trusted_tools: ['lookup', 'find'], roles: null, token_env: null },
+    }])
+    expect(sent('PUT', '/api/settings/mcp/docs/token')).toEqual([{ token: 'secret1234' }])
+    expect(wrapper.find('[role="status"]').text()).toBe('Tools saved')
+  })
+
+  it('keeps unsaved server edits when the settings reload after another save', async () => {
+    const wrapper = await openTools({ 'PUT /api/settings/mcp': {} })
+    await tab(wrapper, 'Tools')
+    await wrapper.find('input[id^="mcp-command-"]').setValue('node server.js ""')
+    await wrapper.find('input[id^="mcp-token-"]').setValue('typed-token')
+    await wrapper.setProps({ settings: { ...mcpSettings, run: { ...mcpSettings.run, token_cap: 9 } } })
+    expect(wrapper.find('input[id^="mcp-command-"]').element.value).toBe('node server.js ""')
+    expect(wrapper.find('input[id^="mcp-token-"]').element.value).toBe('typed-token')
+
+    // An empty argument isn't sent: the API takes none.
+    serveApi({ 'PUT /api/settings/mcp': {}, 'PUT /api/settings/mcp/gh/token': { token_hint: '••••oken' } })
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/mcp')[0].gh.command).toEqual(['node', 'server.js'])
+  })
+
+  it('refills the server forms when it opens again', async () => {
+    const wrapper = await openTools()
+    await tab(wrapper, 'Tools')
+    await wrapper.find('input[id^="mcp-command-"]').setValue('changed')
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    expect(wrapper.find('input[id^="mcp-command-"]').element.value).toBe('npx -y "gh server"')
+  })
+
+  it('removes a server, and refuses nameless or duplicate ones', async () => {
+    const wrapper = await openTools({ 'PUT /api/settings/mcp': {} })
+    await tab(wrapper, 'Tools')
+    await button(wrapper, 'Add MCP server').trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').text()).toBe('Give every server a name')
+    await wrapper.findAll('input[id^="mcp-name-"]')[1].setValue('gh')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[role="status"]').text()).toBe('Two servers are called gh')
+
+    await wrapper.find('[aria-label="Remove gh"]').trigger('click')
+    await wrapper.find('[aria-label="Remove gh"]').trigger('click')
+    expect(wrapper.text()).toContain('No MCP servers yet.')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/mcp')).toEqual([{}])
   })
 })

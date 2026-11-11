@@ -52,6 +52,13 @@ describe('ChatStream', () => {
     expect(folded.text()).not.toContain('Use SQLite')
   })
 
+  it('folds tool calls with the rest of the crew work in "Juli only"', () => {
+    const tool = msg('m3', 'tool', 'Coder', 'read_file calc.py', { data: { tool: 'read_file', status: 'ok', output: 'x' } })
+    const wrapper = mountStream({ view: 'juli', timeline: [{ run, items: [items[0], tool, items[3]] }] })
+    expect(wrapper.find('details summary').text()).toContain('2 steps')
+    expect(wrapper.find('details').text()).toContain('read_file calc.py')
+  })
+
   it('keeps an open question in view in "Juli only", and folds answered ones', () => {
     const decision = msg('m6', 'decision', 'System', 'Approve the plan?', { data: { kind: 'plan_approval' } })
     const answered = msg('m7', 'decision', 'System', 'Run pytest?', { data: { kind: 'command_approval', command: 'pytest' } })

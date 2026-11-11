@@ -1,7 +1,7 @@
 <template>
   <section :data-decision="message.key" class="rounded-xl border p-4" :class="open ? 'border-amber-400/40 bg-amber-400/[0.06]' : 'border-juli-border bg-white/[0.02]'" :aria-label="heading">
     <div class="flex items-start gap-3">
-      <Icon :name="kind === 'command_approval' ? 'terminal' : kind === 'key_problem' ? 'key' : 'check'" class="mt-0.5 h-5 w-5 shrink-0" :class="open ? 'text-amber-300' : 'text-slate-500'" />
+      <Icon :name="ICONS[kind] || 'check'" class="mt-0.5 h-5 w-5 shrink-0" :class="open ? 'text-amber-300' : 'text-slate-500'" />
       <div class="min-w-0 flex-1 space-y-3">
         <div>
           <h3 class="text-sm font-semibold text-white">{{ heading }}</h3>
@@ -15,6 +15,19 @@
             <span class="badge" :class="data.sandbox ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'">
               <Icon :name="data.sandbox ? 'shield' : 'alert'" class="h-3.5 w-3.5" />
               {{ data.sandbox ? 'Docker sandbox, no network' : 'On this machine, no sandbox' }}
+            </span>
+            <span class="text-slate-400">Asks because {{ data.reason }}.</span>
+          </p>
+        </template>
+
+        <!-- The tool, its server and the exact arguments -->
+        <template v-if="kind === 'tool_approval'">
+          <p class="text-sm text-slate-200"><code class="font-mono">{{ data.tool }}</code> <span class="text-slate-400">from the MCP server</span> <code class="font-mono">{{ data.server }}</code></p>
+          <pre class="max-h-60 overflow-auto whitespace-pre-wrap break-all rounded-lg border border-juli-border bg-black/40 px-3 py-2 font-mono text-sm text-slate-100">{{ argsText }}</pre>
+          <p class="flex flex-wrap items-center gap-2 text-xs">
+            <span class="badge" :class="data.sandbox ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-200'">
+              <Icon :name="data.sandbox ? 'shield' : 'alert'" class="h-3.5 w-3.5" />
+              {{ data.sandbox ? 'Docker sandbox, no network' : 'Outside the sandbox' }}
             </span>
             <span class="text-slate-400">Asks because {{ data.reason }}.</span>
           </p>
@@ -48,6 +61,12 @@
             <button type="button" class="btn btn-danger" :disabled="busy" @click="answer('deny')"><Icon name="x" class="h-4 w-4" />Deny</button>
           </div>
 
+          <!-- MCP tool call -->
+          <div v-else-if="kind === 'tool_approval'" class="flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary" :disabled="busy" @click="answer('approve')"><Icon name="check" class="h-4 w-4" />Allow this call</button>
+            <button type="button" class="btn btn-danger" :disabled="busy" @click="answer('deny')"><Icon name="x" class="h-4 w-4" />Deny</button>
+          </div>
+
           <!-- Key problem: switch model and resume, or stop -->
           <div v-else-if="kind === 'key_problem'" class="space-y-3">
             <div>
@@ -72,7 +91,8 @@
 
 <script setup>
 // A paused run's question, answerable inline: approve/revise/stop a plan,
-// approve/deny an agent command, or switch model/stop on a key problem.
+// approve/deny an agent command or MCP tool call, or switch model/stop on a
+// key problem.
 import { ref, computed } from 'vue'
 import Icon from './Icon.vue'
 import { apiFetch } from '../api.js'
@@ -94,17 +114,21 @@ const model = ref('')
 const busy = ref(false)
 const error = ref('')
 
+const ICONS = { command_approval: 'terminal', tool_approval: 'wrench', key_problem: 'key' }
+
 const heading = computed(() => ({
   plan_approval: 'Approve the plan?',
   command_approval: `${data.value.agent || 'An agent'} wants to run a command`,
+  tool_approval: `${data.value.agent || 'An agent'} wants to use a tool`,
   key_problem: `${data.value.agent || 'An agent'} can't continue`,
 }[kind.value] || 'The run is waiting for you'))
 
-// The first line of the server's text; the command itself is shown separately.
+// The first line of the server's text; the command or arguments are shown separately.
 const intro = computed(() => {
   const text = props.message.content || ''
-  return kind.value === 'command_approval' ? text.split('\n\n')[0] : text
+  return kind.value === 'command_approval' || kind.value === 'tool_approval' ? text.split('\n\n')[0] : text
 })
+const argsText = computed(() => JSON.stringify(data.value.args ?? {}, null, 2))
 
 const LABELS = { approve: 'Approved', revise: 'Changes sent to the planner', deny: 'Denied', switch: 'Switched model and resumed', stop: 'Stopped' }
 const outcome = computed(() => (props.answeredWith ? LABELS[props.answeredWith] || 'Answered' : 'No longer waiting for an answer'))

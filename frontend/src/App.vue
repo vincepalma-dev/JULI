@@ -105,7 +105,7 @@
     <ProjectsPanel :open="panel === 'projects'" :projects="projects" :active-project-id="activeProjectId" @close="panel = null" @create-project="createProject($event, true)" @select-project="selectProject($event, true)" @delete-project="deleteProject" />
     <SettingsPanel :open="panel === 'settings'" :settings="settings" :providers="providers" :local-models="localModels" @close="panel = null" @saved="loadSettings" />
 
-    <!-- Plan and command approvals also come up as a modal; closing it leaves the card in the run -->
+    <!-- Plan, command and tool approvals also come up as a modal; closing it leaves the card in the run -->
     <dialog ref="decisionDialog" class="modal" aria-label="The run is waiting for you" @close="dismissed = modalDecision?.key || dismissed">
       <div v-if="modalDecision" class="p-1">
         <DecisionCard :message="modalDecision" open :models="localModels" @answered="answered(modalDecision.key, $event)" />
@@ -352,7 +352,7 @@ const dismissed = ref(null)
 const keyProblem = computed(() => (run.openDecision.value?.data?.kind === 'key_problem' ? run.openDecision.value : null))
 const modalDecision = computed(() => {
   const d = run.openDecision.value
-  return d && d.key !== dismissed.value && ['plan_approval', 'command_approval'].includes(d.data?.kind) ? d : null
+  return d && d.key !== dismissed.value && ['plan_approval', 'command_approval', 'tool_approval'].includes(d.data?.kind) ? d : null
 })
 
 watch(modalDecision, async d => {

@@ -94,6 +94,12 @@ class Printer:
         elif kind == "command":
             # The output already streamed; show the command and its status.
             console.print(msg.content.split("\n\n")[0], style=STYLES["command"], markup=False)
+        elif kind == "tool_start":
+            console.print(f"[dim]→ {escape(msg.content)}[/]")
+        elif kind == "tool":
+            status = (msg.data or {}).get("status", "ok")
+            if status != "ok":
+                console.print(f"[dim]  {escape(msg.content)}: {escape(status)}[/]")
         else:
             console.print(msg.content, style=STYLES.get(kind, ""), markup=False)
 
@@ -117,6 +123,8 @@ def _answer(msg: AgentMessage) -> None:
                 error = engine.decide("revise", message=answer)
         elif data.get("kind") == "command_approval":
             error = engine.decide("approve" if typer.confirm("Run this command?", default=False) else "deny")
+        elif data.get("kind") == "tool_approval":
+            error = engine.decide("approve" if typer.confirm("Allow this tool call?", default=False) else "deny")
         else:
             model = typer.prompt("Switch to which model (provider:model)? Leave empty to stop", default="", show_default=False)
             error = engine.decide("switch", model.strip()) if model.strip() else engine.decide("stop")

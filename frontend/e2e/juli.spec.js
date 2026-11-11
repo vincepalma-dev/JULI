@@ -1,6 +1,8 @@
 // JULI end to end: the plan's verification list, against the real API and a
 // fake model server. The tests share one server and run in order.
 import { execFileSync } from 'node:child_process'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 
 const TOKEN = 'e2e-session'
@@ -52,15 +54,17 @@ async function startTask(page, text) {
   await page.locator('#composer-text').press('Enter')
 }
 
-/** Wait for the run to end, answering command approvals with `answer` (approve or deny). */
+/** Wait for the run to end, answering approvals with the button(s) named in `answer`. */
 async function finish(page, request, answer = 'Run command') {
   const asked = []
   await expect(async () => {
+    // Read the dialog once and pick from that, so a card that renders midway can't get the wrong answer.
     const dialog = page.locator('dialog[open]')
-    const button = dialog.getByRole('button', { name: answer })
-    if (await button.isVisible().catch(() => false)) {
-      asked.push(await dialog.innerText())
-      await button.click()
+    const text = await dialog.innerText({ timeout: 1000 }).catch(() => '')
+    const name = [answer].flat().find(n => text.includes(n))
+    if (name) {
+      asked.push(text)
+      await dialog.getByRole('button', { name }).click()
     }
     expect(ENDED).toContain((await api(request, '/api/status')).status)
   }).toPass({ timeout: 90_000, intervals: [500] })
@@ -137,6 +141,13 @@ test('a Privacy Mode run executes on the local endpoint and asks before a comman
   expect(asked[0]).toContain('outside any sandbox')
   await expect(page.getByText('VERDICT: APPROVED').first()).toBeVisible()
   await expect(page.getByText('README.md', { exact: true }).first()).toBeVisible() // the docs agent wrote it
+
+  // The reviewer read calc.py with a tool before its verdict.
+  const tool = (await lastRunMessages(request)).find(m => m.message_type === 'tool')
+  expect(tool.content).toBe('read_file calc.py')
+  expect(tool.data.status).toBe('ok')
+  expect(tool.data.output).toContain('return a + b')
+  await expect(page.locator('summary').filter({ hasText: 'read_file calc.py' }).first()).toBeVisible()
 })
 
 test('the workspace shows the files, the run diff and a zip', async ({ page }) => {
@@ -180,6 +191,7 @@ test('a token cap stops a local run', async ({ page, request }) => {
   await panel(page, 'Settings')
   await page.fill('#tokencap', '250')
   await page.getByRole('button', { name: 'Save limits' }).click()
+  await expect(page.getByText('Limits saved')).toBeVisible() // saved before the run reads the settings
   await closePanel(page)
   await startTask(page, 'Run into the token cap.')
   expect((await finish(page, request, 'Deny')).status).toBe('stopped')
@@ -188,6 +200,31 @@ test('a token cap stops a local run', async ({ page, request }) => {
   await panel(page, 'Settings')
   await page.fill('#tokencap', '')
   await page.getByRole('button', { name: 'Save limits' }).click()
+  await expect.poll(async () => (await api(request, '/api/settings')).run.token_cap).toBe(null)
+})
+
+test('an MCP tool call asks first and its result reaches the agent', async ({ page, request }) => {
+  const python = process.env.JULI_PYTHON || (process.platform === 'win32' ? resolve('../.venv/Scripts/python.exe') : 'python')
+  const server = { transport: 'stdio', command: [python, fileURLToPath(new URL('../../tests/fixtures/mcp_server.py', import.meta.url))] }
+  // In Privacy Mode a server outside the sandbox doesn't start, so this run is out of it.
+  const { run } = await api(request, '/api/settings')
+  // Later tests share this server: the settings come back even when an assertion fails.
+  try {
+    await api(request, '/api/settings/mcp', { method: 'PUT', data: { fake: server } })
+    await api(request, '/api/settings/run', { method: 'PUT', data: { ...run, privacy_mode: false } })
+    await open(page)
+    await startTask(page, 'Use the MCP tool.')
+    const { status, asked } = await finish(page, request, ['Allow this call', 'Deny'])
+    expect(status).toBe('complete')
+    const approval = asked.find(text => text.includes('wants to use a tool'))
+    expect(approval).toContain('from the MCP server')
+    expect(approval).toContain('"text": "from the tester"')
+    const tool = (await lastRunMessages(request)).find(m => m.message_type === 'tool' && m.data.server === 'fake')
+    expect(tool.data.output).toBe('echo: from the tester')
+  } finally {
+    await api(request, '/api/settings/mcp', { method: 'PUT', data: {} })
+    await api(request, '/api/settings/run', { method: 'PUT', data: run })
+  }
 })
 
 test('the terminal runs commands', async ({ page }) => {

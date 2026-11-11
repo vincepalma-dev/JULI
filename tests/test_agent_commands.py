@@ -210,6 +210,16 @@ def test_a_tool_missing_from_the_image_warns_without_a_fix_pass(models, bus, pro
     assert any("'pytest' isn't in the sandbox image python:3.12-slim" in m.content for m in of_type(bus, "warning"))
 
 
+def test_a_sandbox_image_that_is_not_here_says_how_to_get_it(models, bus, project, procs):
+    procs.handler = docker_up(lambda argv: (b"docker: Error response from daemon: No such image: python:3.12-slim\n", 125))
+    run = start(bus, project, sandbox=SANDBOX)
+    assert run.execute().status == "complete"
+    assert models.refs.count("ollama:code") == 1  # no fix pass for a missing image
+    warnings = [m.content for m in of_type(bus, "warning")]
+    assert any("isn't on this machine" in w and "docker pull python:3.12-slim" in w for w in warnings)
+    assert any(a[:2] == ["docker", "run"] and a[a.index("--pull") + 1] == "never" for a in procs.argvs())
+
+
 def test_stop_while_a_command_runs(models, bus, project, procs):
     def handler(argv):
         return FakeProc(argv, b"collecting\n", block=True) if argv[:2] == ["docker", "run"] else (b"", 0)

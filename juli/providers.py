@@ -6,6 +6,14 @@ A model ref is "provider:model", split on the first colon, e.g.
 every provider: OpenAI-compatible (OpenAI, Gemini, OpenRouter, Groq, DeepSeek,
 Mistral, xAI, custom endpoints), Anthropic, and Ollama's native API.
 
+Tool calling: stream() takes tool schemas ({"name", "description",
+"parameters"}) and yields a ToolCall for each call the model makes. Messages
+use one neutral shape that each wire format converts: an assistant message
+may carry "tool_calls" ([{"id", "name", "arguments"}]), and a tool result is
+{"role": "tool", "tool_call_id", "name", "content"}. A model that refuses
+tools is remembered for this process and called again without them, so the
+text protocol takes over.
+
 Keys come only from juli.keystore and are never logged: messages show the
 provider name and the key's last 4 characters at most.
 """
@@ -16,6 +24,7 @@ import logging
 import re
 import threading
 import time
+import uuid
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -67,6 +76,17 @@ class ProviderError(RuntimeError):
         super().__init__(f"{provider}: {message}")
         self.provider = provider
         self.problem = problem
+
+
+@dataclass
+class ToolCall:
+    id: str
+    name: str
+    arguments: str  # JSON text, as the model wrote it
+
+
+class ToolsUnsupported(ProviderError):
+    """The model (or its server) refused a request with tools."""
 
 
 @dataclass
@@ -132,6 +152,15 @@ def cost(ref: str, tokens_in: int, tokens_out: int, endpoints: Mapping[str, dict
 
 def preset_refs() -> list[str]:
     return list(MODELS)
+
+
+# Model refs that refused tools in this process; they get the text protocol.
+_NO_TOOLS: set[str] = set()
+
+
+def supports_tools(ref: str) -> bool:
+    """False once the model has refused a request with tools."""
+    return ref not in _NO_TOOLS
 
 
 # ─── Errors and headers (pure) ───────────────────────────────
@@ -253,6 +282,25 @@ def _error_message(body: Any) -> str:
     return _as_text(body)[:500]
 
 
+# How servers say they can't take tools: Ollama ("does not support tools"),
+# llama.cpp ("tools param requires --jinja flag"), vLLM ("--enable-auto-tool-choice")
+# and OpenRouter ("No endpoints found that support tool use").
+_NO_TOOL_SUPPORT = re.compile(
+    r"(?:does not|doesn't|do not) support (?:tools|tool|function)"
+    r"|(?:tools?|tool use|tool calling|function calling) (?:is |are )?not supported"
+    r"|requires --jinja|enable-auto-tool-choice|support tool use"
+)
+
+
+def _rejects_tools(status: int, body: Any) -> bool:
+    """An error that says the model or server can't take tools at all (not a bad tool request)."""
+    return status in (400, 404, 422, 500, 501) and bool(_NO_TOOL_SUPPORT.search(_as_text(body).lower()))
+
+
+def _has_tool_history(messages: list[dict]) -> bool:
+    return any(m["role"] == "tool" or m.get("tool_calls") for m in messages)
+
+
 def _status_error(provider: str, kind: str, status: int, body: Any, headers: Any, key: str | None) -> ProviderError:
     problem = classify_error(kind, status, body, headers)
     detail = redact(_error_message(body) or f"HTTP {status}", key)
@@ -297,8 +345,9 @@ def stream(
     num_ctx: int | None = None,
     cancel: threading.Event | None = None,
     endpoints: Mapping[str, dict] | None = None,
-) -> Generator[str | Usage, None, None]:
-    """Stream a chat reply: text deltas, then one Usage.
+    tools: list[dict] | None = None,
+) -> Generator[str | ToolCall | Usage, None, None]:
+    """Stream a chat reply: text deltas and tool calls, then one Usage.
 
     Rate limits and overload are retried, honouring Retry-After, for at most
     about a minute in total and only before any text has arrived. Setting
@@ -306,16 +355,17 @@ def stream(
     """
     provider, model, info, key = _resolve(ref, privacy, endpoints)
     kind = info["kind"]
+    tools = tools if tools and supports_tools(ref) else None
     waited, attempt = 0.0, 0
     while True:
         started = False
         try:
             if kind == "anthropic":
-                chunks = _anthropic(provider, model, info, key, messages, max_tokens or _max_output(ref))
+                chunks = _anthropic(provider, model, info, key, messages, max_tokens or _max_output(ref), tools)
             elif kind == "ollama":
-                chunks = _ollama(provider, model, info, messages, max_tokens, num_ctx)
+                chunks = _ollama(provider, model, info, messages, max_tokens, num_ctx, tools)
             else:
-                chunks = _openai(provider, model, info, key, messages, max_tokens)
+                chunks = _openai(provider, model, info, key, messages, max_tokens, tools)
             for item in chunks:
                 if cancel is not None and cancel.is_set():
                     chunks.close()  # closes the SDK or HTTP stream
@@ -326,6 +376,13 @@ def stream(
                     started = True
                 yield item
             return
+        except ToolsUnsupported:
+            # Calls and results already in the conversation can't be dropped, so only a fresh one falls back.
+            if started or not tools or _has_tool_history(messages):
+                raise
+            log.info("%s refused tools; using the text protocol", ref)
+            _NO_TOOLS.add(ref)
+            tools = None
         except ProviderError as e:
             problem = e.problem
             if started or not problem or problem.kind not in ("rate_limit", "overloaded"):
@@ -347,11 +404,37 @@ def _max_output(ref: str) -> int:
     return int(MODELS.get(ref, {}).get("max_output", DEFAULT_ANTHROPIC_MAX_OUTPUT))
 
 
-def _openai(provider, model, info, key, messages, max_tokens) -> Generator[str | Usage, None, None]:
+def _call_id() -> str:
+    """An id for a tool call the server sent without one, unique across replies and handoffs."""
+    return f"call_{uuid.uuid4().hex[:16]}"
+
+
+def _function_tools(tools: list[dict]) -> list[dict]:
+    return [{"type": "function", "function": t} for t in tools]
+
+
+def _openai_messages(messages: list[dict]) -> list[Any]:
+    out = []
+    for m in messages:
+        if m["role"] == "tool":
+            out.append({"role": "tool", "tool_call_id": m["tool_call_id"], "content": m["content"]})
+        elif m.get("tool_calls"):
+            calls = [
+                {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}} for c in m["tool_calls"]
+            ]
+            out.append({"role": "assistant", "content": m["content"] or None, "tool_calls": calls})
+        else:
+            out.append({"role": m["role"], "content": m["content"]})
+    return out
+
+
+def _openai(provider, model, info, key, messages, max_tokens, tools=None) -> Generator[str | ToolCall | Usage, None, None]:
     kwargs: dict[str, Any] = {}
     if max_tokens:
         # OpenAI's own API wants max_completion_tokens; compatible APIs take max_tokens.
         kwargs["max_completion_tokens" if provider == "openai" else "max_tokens"] = max_tokens
+    if tools:
+        kwargs["tools"] = _function_tools(tools)
     client = openai.OpenAI(
         api_key=key or "not-needed",
         base_url=info["base_url"],
@@ -363,20 +446,33 @@ def _openai(provider, model, info, key, messages, max_tokens) -> Generator[str |
         try:
             raw = client.chat.completions.with_raw_response.create(
                 model=model,
-                messages=messages,
+                messages=_openai_messages(messages),
                 stream=True,
                 stream_options={"include_usage": True},
                 **kwargs,
             )
             tokens_in = tokens_out = 0
+            calls: dict[int, dict] = {}  # tool calls arrive in pieces, by index
             with raw.parse() as chunks:
                 for chunk in chunks:
                     if chunk.usage:
                         tokens_in, tokens_out = chunk.usage.prompt_tokens, chunk.usage.completion_tokens
                     for choice in chunk.choices:
-                        if choice.delta and choice.delta.content:
+                        if not choice.delta:
+                            continue
+                        if choice.delta.content:
                             yield choice.delta.content
+                        for piece in choice.delta.tool_calls or []:
+                            call = calls.setdefault(piece.index, {"id": "", "name": "", "arguments": ""})
+                            call["id"] = piece.id or call["id"]
+                            if piece.function:
+                                call["name"] += piece.function.name or ""
+                                call["arguments"] += piece.function.arguments or ""
+            for _, call in sorted(calls.items()):
+                yield ToolCall(call["id"] or _call_id(), call["name"], call["arguments"])
         except openai.APIStatusError as e:
+            if tools and _rejects_tools(e.status_code, e.body):
+                raise ToolsUnsupported(provider, redact(_error_message(e.body), key)) from None
             raise _status_error(provider, info.get("errors", "openai"), e.status_code, e.body, e.response.headers, key) from None
         except openai.APIConnectionError as e:
             raise ProviderError(provider, f"can't reach {info['base_url']} ({type(e).__name__})") from None
@@ -385,9 +481,42 @@ def _openai(provider, model, info, key, messages, max_tokens) -> Generator[str |
     yield Usage(tokens_in, tokens_out, None, low_quota_warnings(raw.headers))
 
 
-def _anthropic(provider, model, info, key, messages, max_tokens) -> Generator[str | Usage, None, None]:
+def _arguments(text: str) -> dict:
+    try:
+        value = json.loads(text or "{}")
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _anthropic_messages(messages: list[dict]) -> list[Any]:
+    """Tool calls become tool_use blocks, results tool_result blocks in a user
+    turn. Consecutive turns of one role merge, so the roles alternate."""
+    out: list[dict] = []
+    for m in messages:
+        if m["role"] == "system":
+            continue
+        if m["role"] == "tool":
+            role, blocks = "user", [{"type": "tool_result", "tool_use_id": m["tool_call_id"], "content": m["content"]}]
+        elif m.get("tool_calls"):
+            role = "assistant"
+            blocks = [{"type": "text", "text": m["content"]}] if m["content"] else []
+            blocks += [{"type": "tool_use", "id": c["id"], "name": c["name"], "input": _arguments(c["arguments"])} for c in m["tool_calls"]]
+        else:
+            role, blocks = m["role"], [{"type": "text", "text": m["content"]}]
+        if out and out[-1]["role"] == role:
+            previous = out[-1]["content"]
+            out[-1]["content"] = (previous if isinstance(previous, list) else [{"type": "text", "text": previous}]) + blocks
+        elif len(blocks) == 1 and blocks[0]["type"] == "text":
+            out.append({"role": role, "content": blocks[0]["text"]})
+        else:
+            out.append({"role": role, "content": blocks})
+    return out
+
+
+def _anthropic(provider, model, info, key, messages, max_tokens, tools=None) -> Generator[str | ToolCall | Usage, None, None]:
     system = "\n\n".join(m["content"] for m in messages if m["role"] == "system")
-    turns = [m for m in messages if m["role"] != "system"]
+    turns = _anthropic_messages(messages)
     client = anthropic.Anthropic(
         api_key=key,
         base_url=info["base_url"],
@@ -398,10 +527,16 @@ def _anthropic(provider, model, info, key, messages, max_tokens) -> Generator[st
     with client:
         try:
             extra: dict[str, Any] = {"system": system} if system else {}
+            if tools:
+                extra["tools"] = [{"name": t["name"], "description": t["description"], "input_schema": t["parameters"]} for t in tools]
             with client.messages.stream(model=model, max_tokens=max_tokens, messages=turns, **extra) as s:
                 headers = s.response.headers
                 yield from s.text_stream
-                usage = s.get_final_message().usage
+                final = s.get_final_message()
+                usage = final.usage
+                for block in final.content:
+                    if block.type == "tool_use":
+                        yield ToolCall(block.id, block.name, json.dumps(block.input))
         except anthropic.APIStatusError as e:
             raise _status_error(provider, "anthropic", e.status_code, e.body, e.response.headers, key) from None
         except anthropic.APIConnectionError as e:
@@ -412,8 +547,23 @@ def _anthropic(provider, model, info, key, messages, max_tokens) -> Generator[st
     yield Usage(tokens_in, usage.output_tokens, None, low_quota_warnings(headers))
 
 
-def _ollama(provider, model, info, messages, max_tokens, num_ctx) -> Generator[str | Usage, None, None]:
-    body: dict[str, Any] = {"model": model, "messages": messages, "stream": True}
+def _ollama_messages(messages: list[dict]) -> list[dict]:
+    out = []
+    for m in messages:
+        if m["role"] == "tool":
+            out.append({"role": "tool", "content": m["content"], "tool_name": m["name"]})
+        elif m.get("tool_calls"):
+            calls = [{"function": {"name": c["name"], "arguments": _arguments(c["arguments"])}} for c in m["tool_calls"]]
+            out.append({"role": "assistant", "content": m["content"], "tool_calls": calls})
+        else:
+            out.append({"role": m["role"], "content": m["content"]})
+    return out
+
+
+def _ollama(provider, model, info, messages, max_tokens, num_ctx, tools=None) -> Generator[str | ToolCall | Usage, None, None]:
+    body: dict[str, Any] = {"model": model, "messages": _ollama_messages(messages), "stream": True}
+    if tools:
+        body["tools"] = _function_tools(tools)
     options = {k: v for k, v in (("num_ctx", num_ctx), ("num_predict", max_tokens)) if v}
     if options:
         body["options"] = options
@@ -423,16 +573,27 @@ def _ollama(provider, model, info, messages, max_tokens, num_ctx) -> Generator[s
         with http_client() as http, http.stream("POST", url, json=body) as response:
             if response.status_code >= 400:
                 response.read()
-                raise ProviderError(provider, f"HTTP {response.status_code}: {_error_message(_json_or_text(response))}")
+                error = _json_or_text(response)
+                if tools and _rejects_tools(response.status_code, error):
+                    raise ToolsUnsupported(provider, _error_message(error))
+                raise ProviderError(provider, f"HTTP {response.status_code}: {_error_message(error)}")
             for line in response.iter_lines():
                 if not line.strip():
                     continue
                 data = json.loads(line)
                 if data.get("error"):
                     raise ProviderError(provider, str(data["error"]))
-                text = (data.get("message") or {}).get("content")
-                if text:
-                    yield text
+                message = data.get("message") or {}
+                if message.get("content"):
+                    yield message["content"]
+                for call in message.get("tool_calls") or []:
+                    function = call.get("function") or {}
+                    arguments = function.get("arguments") or {}
+                    yield ToolCall(
+                        call.get("id") or _call_id(),
+                        function.get("name") or "",
+                        arguments if isinstance(arguments, str) else json.dumps(arguments),
+                    )
                 if data.get("done"):
                     tokens_in, tokens_out = data.get("prompt_eval_count", 0), data.get("eval_count", 0)
     except httpx.HTTPError as e:

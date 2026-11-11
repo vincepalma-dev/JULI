@@ -16,6 +16,7 @@ Run it entirely on-device with local models, or bring your own cloud API keys. Y
 - **No token limits.** JULI never caps your usage. Local models get the largest context window your memory allows. Cloud spending caps are optional and off by default.
 - **API key guardrails.** Keys are checked when you save them, you get "running low" warnings, and a run pauses (instead of crashing) when a key runs out of credit, so you can switch models and resume.
 - **Real files, real terminal.** Generated code lands in a file tree with a diff view. A built-in terminal works like an IDE's, and agent commands ask for your approval.
+- **Agents with tools.** Agents read, search and write the project's files, run its checks and hand work to each other (the Tester sends a failing test back to the Coder). Each role gets only the tools it needs: the Reviewer can run the tests but never edits the code it reviews. Add more tools from any [MCP](https://modelcontextprotocol.io) server. Models without tool calling keep working through plain text.
 
 ## Requirements
 
@@ -73,6 +74,7 @@ JULI is built for one person on one machine:
 - It listens on `127.0.0.1` only.
 - Every request needs the session token from the launch link.
 - Agent commands ask before they run, unless they're plain test commands inside the Docker sandbox.
+- MCP tool calls ask before they run, unless you trust the tool and its server is sandboxed or reached over HTTP.
 
 See [SECURITY.md](SECURITY.md) for the threat model and how to report a vulnerability.
 
@@ -110,7 +112,7 @@ A nightly workflow downloads a small real model with Ollama, benchmarks it and r
 | 5 | Artifact workspace, IDE-style terminal, approvable agent commands |
 | 6 | Dashboard UI for all of the above |
 | 7 | Tooling: tests, linting, type checks, CI, secret scanning, docs |
-| 8 | Agent harness: tools and MCP (next) |
+| 8 | Agent harness: middleware around every model call, a tool loop with built-in and MCP tools, handoffs between agents |
 
 ## Credits
 

@@ -118,6 +118,19 @@ describe('App with a session', () => {
     expect(wrapper.find('dialog.modal[open]').exists()).toBe(false)
   })
 
+  it('brings an MCP tool approval up as a modal too', async () => {
+    const { wrapper, push } = await start({ 'POST /api/task/decision': {} })
+    await startTask(wrapper)
+    await push(event('status', { data: { status: 'running' } }))
+    await push(event('decision', { content: 'Tester wants to use echo.\n\n{}', data: { kind: 'tool_approval', agent: 'Tester', tool: 'echo', server: 'fake', args: { text: 'hi' }, sandbox: false, reason: 'its server runs on this machine, outside the sandbox' } }))
+    await push(event('status', { data: { status: 'paused' } }))
+    const modal = wrapper.find('dialog.modal[open]')
+    expect(modal.find('pre').text()).toBe('{\n  "text": "hi"\n}')
+    await modal.findAll('button').find(b => b.text().includes('Allow this call')).trigger('click')
+    await flushPromises()
+    expect(sent('POST', '/api/task/decision')).toEqual([{ action: 'approve' }])
+  })
+
   it('shows a key problem as a banner, with a way to stop', async () => {
     const { wrapper, push } = await start({ 'POST /api/task/stop': {} })
     await startTask(wrapper)

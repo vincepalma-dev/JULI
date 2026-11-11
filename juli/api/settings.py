@@ -1,13 +1,14 @@
 """
 Settings routes. Keys go to the OS keychain; settings.json only records which
-providers exist. Responses show key hints ("••••abcd"), never keys.
+providers exist. Responses show key hints ("••••abcd"), never keys. MCP
+servers are saved here too; their tokens go to the keychain as well.
 """
 
 from fastapi import APIRouter, HTTPException, Response
 
-from juli import config, keystore, roles
+from juli import config, keystore, mcp, roles
 from juli import providers as llm
-from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, ModeRequest, ProviderId, RunSettings
+from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, McpName, McpServers, McpToken, ModeRequest, ProviderId, RunSettings
 from juli.local import crew
 
 router = APIRouter(prefix="/settings")
@@ -35,7 +36,14 @@ def get_settings() -> dict:
         "available_models": list(dict.fromkeys(llm.preset_refs() + settings["available_models"] + in_use)),
         "run": settings["run"],
         "mode": crew.current_mode(settings),
+        "mcp_servers": _mcp_view(settings),
     }
+
+
+def _mcp_view(settings: dict) -> dict:
+    """The MCP servers, each with a hint of its token (never the token)."""
+    servers = settings.get("mcp_servers") or {}
+    return {name: {**cfg, "token_hint": keystore.key_hint(keystore.get_key(mcp.token_key(name)))} for name, cfg in servers.items()}
 
 
 @router.put("/agents")
@@ -43,8 +51,10 @@ def update_agents(agents: AgentUpdates) -> dict:
     with config.settings_lock:
         settings = config.load_settings()
         for name, update in agents.items():
-            # Unset fields stay as they are; an explicit null only clears max_tokens.
-            changes = {k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None or k == "max_tokens"}
+            # Unset fields stay as they are; an explicit null only clears the limits.
+            changes = {
+                k: v for k, v in update.model_dump(exclude_unset=True).items() if v is not None or k in ("max_tokens", "max_tool_rounds")
+            }
             agent = settings["agents"].setdefault(name, {})
             if changes.get("model"):
                 _require_known_provider(changes["model"], settings)
@@ -70,6 +80,7 @@ def add_agent(agent: AgentCreate) -> dict:
             "icon": agent.icon,
             "job_title": agent.job_title,
             "max_tokens": agent.max_tokens,
+            "max_tool_rounds": agent.max_tool_rounds,
         }
         config.save_settings(settings)
     return {"status": "created", "name": agent.name}
@@ -98,6 +109,46 @@ def update_run_settings(run: RunSettings) -> dict:
         settings["run"] = run.model_dump()
         config.save_settings(settings)
     return {"status": "saved", "run": settings["run"]}
+
+
+@router.put("/mcp")
+def update_mcp_servers(servers: McpServers) -> dict:
+    """Replace the MCP servers. A removed server's token leaves the keychain too."""
+    with config.settings_lock:
+        settings = config.load_settings()
+        removed = set(settings.get("mcp_servers") or {}) - set(servers)
+        settings["mcp_servers"] = {name: server.model_dump() for name, server in servers.items()}
+        config.save_settings(settings)
+    for name in removed:
+        try:
+            keystore.delete_key(mcp.token_key(name))
+        except keystore.KeystoreUnavailable:
+            pass  # nothing could have been stored there either
+    return {"status": "saved", "mcp_servers": _mcp_view(settings)}
+
+
+@router.put("/mcp/{name}/token")
+def set_mcp_token(name: McpName, body: McpToken) -> dict:
+    """Keep an MCP server's token in the keychain."""
+    if name not in (config.load_settings().get("mcp_servers") or {}):
+        raise HTTPException(404, "No MCP server has that name")
+    token = body.token.strip()
+    if not token or "•" in token:
+        raise HTTPException(422, "Paste the token itself")
+    try:
+        keystore.set_key(mcp.token_key(name), token)
+    except keystore.KeystoreUnavailable:
+        raise HTTPException(503, KEYCHAIN_HELP) from None
+    return {"status": "saved", "token_hint": keystore.key_hint(token)}
+
+
+@router.delete("/mcp/{name}/token", status_code=204)
+def delete_mcp_token(name: McpName) -> Response:
+    try:
+        keystore.delete_key(mcp.token_key(name))
+    except keystore.KeystoreUnavailable:
+        raise HTTPException(503, KEYCHAIN_HELP) from None
+    return Response(status_code=204)
 
 
 @router.get("/mode")

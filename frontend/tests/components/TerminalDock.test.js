@@ -120,10 +120,29 @@ describe('TerminalDock agent tab', () => {
     expect(second.find('pre').exists()).toBe(false)
   })
 
+  it('lists tool calls with their server', async () => {
+    const tools = [
+      { key: 't1', kind: 'tool', agent: 'Coder', command: 'read_file app.py', server: null, output: 'x', status: 'ok', seconds: 0.1 },
+      { key: 't2', kind: 'tool', agent: 'Coder', command: 'mcp__gh__search', server: 'gh', output: '', status: 'denied', seconds: null },
+    ]
+    const wrapper = mount(TerminalDock, { props: { open: true, commands: tools } })
+    await wrapper.findAll('[role="tab"]')[1].trigger('click')
+    const [first, second] = wrapper.findAll('[aria-live="polite"] > div')
+    expect(first.text()).toContain('›read_file app.py')
+    expect(first.text()).toContain('tool')
+    expect(first.find('.badge.bg-emerald-500\\/15').exists()).toBe(true)
+    expect(second.text()).toContain('MCP · gh')
+    expect(second.text()).not.toContain('this machine')
+    // Your own denial isn't an error.
+    const denied = second.findAll('.badge').find(b => b.text().startsWith('denied'))
+    expect(denied.classes()).toContain('text-slate-300')
+    expect(denied.classes()).not.toContain('text-red-300')
+  })
+
   it('says what the tab is for when empty, and switches to it when asked', async () => {
     const wrapper = mount(TerminalDock, { props: { open: true, commands: [] } })
     await wrapper.setProps({ showAgent: 1 })
     expect(wrapper.findAll('[role="tab"]')[1].attributes('aria-selected')).toBe('true')
-    expect(wrapper.text()).toContain('Each one that isn\'t safe to run on its own asks you first.')
+    expect(wrapper.text()).toContain('Each command that isn\'t safe to run on its own asks you first.')
   })
 })

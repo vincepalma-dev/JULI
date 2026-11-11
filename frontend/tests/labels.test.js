@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentLabel, formatBytes, formatCost, formatTokens, splitRef, stripAnsi, turnMascot, workingPhrase } from '../src/labels.js'
+import { agentLabel, formatBytes, formatCost, formatTokens, joinArgs, splitArgs, splitRef, stripAnsi, toolIcon, toolPhrase, turnMascot, workingPhrase } from '../src/labels.js'
 
 describe('agentLabel', () => {
   it('splits camel case unless the agent has a job title', () => {
@@ -66,5 +66,34 @@ describe('formatting', () => {
   it('strips terminal colour codes', () => {
     expect(stripAnsi('\x1b[32mok\x1b[0m done')).toBe('ok done')
     expect(stripAnsi(null)).toBe('')
+  })
+})
+
+describe('tool labels', () => {
+  it('has a live phrase per tool', () => {
+    expect(toolPhrase('read_file src/app.py')).toBe('Reading src/app.py…')
+    expect(toolPhrase('list_files')).toBe('Looking through the files…')
+    expect(toolPhrase('list_files src')).toBe('Looking in src…')
+    expect(toolPhrase('search_files TODO later')).toBe('Searching for “TODO later”…')
+    expect(toolPhrase('handoff coder')).toBe('Handing off to coder…')
+    expect(toolPhrase('mcp__github__create_issue')).toBe('Using create_issue from github…')
+    expect(toolPhrase('other')).toBe('Using other…')
+  })
+
+  it('picks an icon per tool', () => {
+    expect(['read_file', 'search_files', 'handoff', 'mcp__x__y'].map(toolIcon)).toEqual(['file', 'search', 'arrows', 'wrench'])
+  })
+
+  it('splits a command line, keeping quoted arguments together, and joins it back', () => {
+    expect(splitArgs(`npx -y "a b" 'c d' e`)).toEqual(['npx', '-y', 'a b', 'c d', 'e'])
+    expect(splitArgs('  ')).toEqual([])
+    expect(joinArgs(['npx', 'a b', ''])).toBe('npx "a b" ""')
+  })
+
+  it('round-trips arguments with quotes and backslashes, and keeps bare Windows paths', () => {
+    const args = ['say', 'it\'s', 'a "b c"', '\'x\'', 'C:\\Program Files\\node', 'end\\', '']
+    expect(splitArgs(joinArgs(args))).toEqual(args)
+    expect(splitArgs('C:\\tools\\server.exe --flag')).toEqual(['C:\\tools\\server.exe', '--flag'])
+    expect(splitArgs('--name="a b"c')).toEqual(['--name=a bc'])
   })
 })

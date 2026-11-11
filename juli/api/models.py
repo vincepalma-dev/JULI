@@ -112,6 +112,18 @@ class RunSettings(Strict):
     max_handoffs: int = Field(default=12, ge=0, le=50)  # per run; 0 turns handoffs off
 
 
+class DataSettings(Strict):
+    """How long run history is kept after a run ends. Null keeps it until deleted."""
+
+    retention_days: int | None = Field(default=None, ge=1, le=3650)
+
+
+class DeleteAllRequest(Strict):
+    """Delete everything JULI stores. The phrase guards against a stray request."""
+
+    confirm: Literal["delete all data"]
+
+
 class ResumeRequest(Strict):
     ignore_allowance: bool = False
 

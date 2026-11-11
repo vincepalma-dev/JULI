@@ -58,13 +58,19 @@ async function startTask(page, text) {
 async function finish(page, request, answer = 'Run command') {
   const asked = []
   await expect(async () => {
-    // Read the dialog once and pick from that, so a card that renders midway can't get the wrong answer.
-    const dialog = page.locator('dialog[open]')
-    const text = await dialog.innerText({ timeout: 1000 }).catch(() => '')
+    // Pick the answer from one card's text and click it on that same card: if
+    // the next decision replaces it meanwhile, the click misses and the next pass retries.
+    const card = page.locator('dialog[open] section[data-decision]')
+    const key = await card.getAttribute('data-decision', { timeout: 1000 }).catch(() => null)
+    const text = key ? await card.innerText({ timeout: 1000 }).catch(() => '') : ''
     const name = [answer].flat().find(n => text.includes(n))
     if (name) {
-      asked.push(text)
-      await dialog.getByRole('button', { name }).click()
+      const clicked = await page
+        .locator(`dialog[open] section[data-decision="${key}"]`)
+        .getByRole('button', { name })
+        .click({ timeout: 2000 })
+        .then(() => true, () => false)
+      if (clicked) asked.push(text)
     }
     expect(ENDED).toContain((await api(request, '/api/status')).status)
   }).toPass({ timeout: 90_000, intervals: [500] })
@@ -280,4 +286,28 @@ test('"Juli only" folds the crew\'s work into one reply', async ({ page }) => {
   await page.getByRole('switch', { name: 'Juli only' }).or(page.getByLabel('Juli only')).first().click()
   await expect(page.getByText('Deliberation of the Coder…')).toHaveCount(0)
   await expect(page.getByText(/crew's work|worked on this/i).first()).toBeVisible()
+})
+
+// Last, since it wipes what the earlier tests made. The test server's keychain
+// is in memory (e2e/serve.py), so no real key can be touched.
+test('"Delete all data" wipes projects, runs and settings, and the dashboard starts over', async ({ page, request }) => {
+  await open(page)
+  const [before] = await api(request, '/api/projects')
+  expect((await api(request, `/api/projects/${before.id}/runs`)).length).toBeGreaterThan(0)
+  await panel(page, 'Settings')
+  await page.getByRole('tab', { name: 'Data' }).click()
+  const remove = page.getByRole('button', { name: 'Delete everything' })
+  await expect(remove).toBeDisabled()
+  await page.fill('#delete-confirm', 'delete all data')
+  await remove.click()
+
+  // The page reloads and makes a fresh first project, with no runs and default settings.
+  await expect.poll(async () => (await api(request, '/api/projects')).map(p => p.name)).toEqual(['My first project'])
+  await expect(page.getByText('Connected')).toBeVisible()
+  const [fresh] = await api(request, '/api/projects')
+  expect(fresh.id).not.toBe(before.id)
+  expect(await api(request, `/api/projects/${fresh.id}/runs`)).toEqual([])
+  const settings = await api(request, '/api/settings')
+  expect(settings.agents.Coder.model).not.toBe('fake:fake')
+  expect(settings.run.privacy_mode).toBe(false)
 })

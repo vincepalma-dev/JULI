@@ -37,6 +37,10 @@ DEFAULT_RUN: dict[str, Any] = {
     "max_handoffs": 12,  # handoffs per run; 0 turns them off
 }
 
+# How long run history (prompts, agent messages, tool and command output,
+# diffs, checkpoints) is kept after a run ends. None keeps it until deleted.
+DEFAULT_DATA: dict[str, Any] = {"retention_days": None}
+
 # The Docker sandbox for agent commands. Off by default: every command then
 # asks first. The image must already hold the tools the commands use
 # (pytest, npm...), since the container has no network.
@@ -90,6 +94,7 @@ def default_settings() -> dict:
         "available_models": [],
         "run": {**DEFAULT_RUN, "allowances": {}},
         "sandbox": dict(DEFAULT_SANDBOX),
+        "data": dict(DEFAULT_DATA),
     }
 
 
@@ -145,6 +150,7 @@ def load_settings() -> dict:
     data.setdefault("available_models", [])
     data["run"] = {**DEFAULT_RUN, "allowances": {}, **(data.get("run") or {})}
     data["sandbox"] = {**DEFAULT_SANDBOX, **(data.get("sandbox") or {})}
+    data["data"] = {**DEFAULT_DATA, **(data.get("data") or {})}
     upgrade_models(data)
     return data
 

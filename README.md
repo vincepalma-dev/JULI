@@ -65,6 +65,8 @@ Run `juli --help` for the full list.
 
 - Settings, run history and each project's files are kept in `./data`, or in the folder that `JULI_DATA_DIR` names.
 - API keys are kept in the OS keychain, never in `./data`.
+- Run history is kept until you delete it, or for 30, 90, 180 or 365 days after a run ends: Settings > Data. Projects and their files stay until you delete them.
+- Settings > Data > Delete all data removes every project and its files, all run history, your settings, and the keys and tokens JULI saved in the keychain. It leaves a `.env` file, Ollama models and Docker images alone.
 - Voice is optional: `pip install -e ".[voice]"`. Voice input uses Google's online speech recognition, and JULI tells you before it listens.
 
 ## Security

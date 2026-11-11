@@ -266,3 +266,66 @@ describe('SettingsPanel tools', () => {
     expect(sent('PUT', '/api/settings/mcp')).toEqual([{}])
   })
 })
+
+describe('SettingsPanel data', () => {
+  async function openData(routes = {}, data = { retention_days: 90 }) {
+    serveApi(routes)
+    const wrapper = mount(SettingsPanel, { props: { open: false, settings: { ...settings, data }, providers, localModels: [] }, attachTo: document.body })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    await tab(wrapper, 'Data')
+    return wrapper
+  }
+
+  it('shows the retention period and saves a new one, saying how many runs went', async () => {
+    const wrapper = await openData({ 'PUT /api/settings/data': { deleted_runs: 2 } })
+    expect(wrapper.find('#retention option:checked').text()).toBe('90 days after a run ends')
+    await wrapper.find('#retention').setValue(wrapper.findAll('#retention option')[1].element.value)
+    await wrapper.findAll('form')[0].trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/data')).toEqual([{ retention_days: 30 }])
+    expect(wrapper.find('[role="status"]').text()).toBe('Saved. 2 older runs were deleted.')
+  })
+
+  it('keeps history until deleted by default', async () => {
+    const wrapper = await openData({ 'PUT /api/settings/data': { deleted_runs: 0 } }, {})
+    expect(wrapper.find('#retention option:checked').text()).toBe('Until I delete it')
+    await wrapper.findAll('form')[0].trigger('submit')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/data')).toEqual([{ retention_days: null }])
+    expect(wrapper.find('[role="status"]').text()).toBe('Saved')
+  })
+
+  it('deletes everything only after the phrase is typed, then starts over', async () => {
+    const wrapper = await openData({ 'POST /api/data/delete-all': { status: 'deleted', problems: [] } })
+    const remove = button(wrapper, 'Delete everything')
+    expect(remove.attributes('disabled')).toBeDefined()
+    await wrapper.find('#delete-confirm').setValue('delete all')
+    expect(remove.attributes('disabled')).toBeDefined()
+    await wrapper.find('#delete-confirm').setValue(' delete all data ')
+    expect(remove.attributes('disabled')).toBeUndefined()
+    await wrapper.findAll('form')[1].trigger('submit')
+    await flushPromises()
+    expect(sent('POST', '/api/data/delete-all')).toEqual([{ confirm: 'delete all data' }])
+    expect(wrapper.emitted('data-deleted')).toEqual([[{ reload: true }]])
+  })
+
+  it('stays put and says what is left when only part could be deleted', async () => {
+    const problems = ["Some workspace files couldn't be deleted (in use). Close the terminal and try again."]
+    const wrapper = await openData({ 'POST /api/data/delete-all': { status: 'partly deleted', problems } })
+    await wrapper.find('#delete-confirm').setValue('delete all data')
+    await wrapper.findAll('form')[1].trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('data-deleted')).toEqual([[{ reload: false }]]) // refresh in place, not a reload
+    expect(wrapper.text()).toContain(`Mostly deleted. ${problems[0]}`)
+  })
+
+  it('shows a refused delete', async () => {
+    const wrapper = await openData({ 'POST /api/data/delete-all': { status: 409, body: { detail: 'A task is running. Stop it first.' } } })
+    await wrapper.find('#delete-confirm').setValue('delete all data')
+    await wrapper.findAll('form')[1].trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('A task is running. Stop it first.')
+    expect(wrapper.emitted('data-deleted')).toBeUndefined()
+  })
+})

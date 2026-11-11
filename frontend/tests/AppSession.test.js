@@ -131,6 +131,52 @@ describe('App with a session', () => {
     expect(sent('POST', '/api/task/decision')).toEqual([{ action: 'approve' }])
   })
 
+  it('refreshes projects in place after a partial "delete all data", keeping what is left in view', async () => {
+    let deleted = false
+    const { wrapper } = await start({
+      'GET /api/projects': () => (deleted ? [] : [PROJECT]),
+      'POST /api/data/delete-all': () => {
+        deleted = true
+        return { status: 'partly deleted', problems: ["Some workspace files couldn't be deleted (in use)."] }
+      },
+      'POST /api/projects': { id: 'p2', name: 'My first project', updated_at: null },
+      'PUT /api/projects/p2/activate': {},
+      'GET /api/projects/p2': { messages: [] },
+      'GET /api/projects/p2/runs': [],
+    })
+    await wrapper.findAll('nav button').filter(b => b.text() === 'Settings').at(-1).trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[role="tab"]').find(t => t.text() === 'Data').trigger('click')
+    await wrapper.find('#delete-confirm').setValue('delete all data')
+    await wrapper.findAll('form').filter(f => f.text().includes('Delete everything')).at(0).trigger('submit')
+    await flushPromises()
+
+    expect(sent('POST', '/api/projects')).toEqual([{ name: 'My first project' }])
+    expect(sent('PUT', '/api/projects/p2/activate')).toHaveLength(1)
+    expect(wrapper.text()).toContain("Mostly deleted. Some workspace files couldn't be deleted (in use).")
+  })
+
+  it('drops the old resume banner after a partial delete, even when the fresh project fails', async () => {
+    let deleted = false
+    const { wrapper } = await start({
+      'GET /api/runs/resumable': [{ id: 3, status: 'error', prompt: 'Old task', mode: 'full' }],
+      'GET /api/projects': () => (deleted ? [] : [PROJECT]),
+      'POST /api/data/delete-all': () => {
+        deleted = true
+        return { status: 'partly deleted', problems: ['Some files stayed.'] }
+      },
+      'POST /api/projects': { status: 500, body: { detail: 'disk full' } },
+    })
+    expect(wrapper.find('[aria-label="Dismiss run 3"]').exists()).toBe(true)
+    await wrapper.findAll('nav button').filter(b => b.text() === 'Settings').at(-1).trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[role="tab"]').find(t => t.text() === 'Data').trigger('click')
+    await wrapper.find('#delete-confirm').setValue('delete all data')
+    await wrapper.findAll('form').filter(f => f.text().includes('Delete everything')).at(0).trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[aria-label="Dismiss run 3"]').exists()).toBe(false)
+  })
+
   it('shows a key problem as a banner, with a way to stop', async () => {
     const { wrapper, push } = await start({ 'POST /api/task/stop': {} })
     await startTask(wrapper)

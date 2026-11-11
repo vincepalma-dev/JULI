@@ -18,7 +18,8 @@ from fastapi import Depends, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from juli import __version__, config, store
+from juli import __version__, config, data, store
+from juli.api import data as data_routes
 from juli.api import local, projects, providers, security, settings, tasks, workspace
 from juli.bus import AgentMessage, message_bus
 
@@ -83,6 +84,10 @@ async def message_bridge(manager: ConnectionManager) -> None:
 async def lifespan(app: FastAPI):
     store.init_db()
     config.migrate_legacy_settings()
+    try:
+        data.apply_retention()
+    except Exception:
+        log.exception("Applying the retention period failed; JULI starts anyway")
     message_bus.set_persister(store.save_message)
     task = asyncio.create_task(message_bridge(app.state.connections))
     yield
@@ -127,7 +132,7 @@ def create_app(token: str | None = None, static_dir: Path | None = None, port: i
         return {"status": "ok", "version": __version__}
 
     auth = [Depends(security.require_token)]
-    for module in (tasks, projects, settings, providers, local, workspace):
+    for module in (tasks, projects, settings, providers, local, workspace, data_routes):
         app.include_router(module.router, prefix="/api", dependencies=auth)
 
     @app.websocket("/ws")

@@ -26,6 +26,7 @@ def connect() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(config.db_path())
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA secure_delete = ON")  # deleted rows are zeroed on disk, not left in free pages
     try:
         with conn:
             yield conn
@@ -175,6 +176,29 @@ def get_project(project_id: str) -> dict | None:
 def delete_project(project_id: str) -> bool:
     with connect() as conn:
         return conn.execute("DELETE FROM projects WHERE id = ?", (project_id,)).rowcount > 0
+
+
+def prune_runs(before: str) -> int:
+    """Delete runs that ended before `before` (ISO time), with their messages,
+    files and checkpoints. Runs that haven't ended are kept. Returns how many went."""
+    with connect() as conn:
+        deleted = conn.execute("DELETE FROM runs WHERE ended_at IS NOT NULL AND ended_at < ?", (before,)).rowcount
+        conn.execute("DELETE FROM messages WHERE run_id IS NULL AND timestamp < ?", (before,))  # from before runs existed
+        return deleted
+
+
+def delete_all() -> None:
+    """Every project, run, message, file record and benchmark. The file is then
+    rebuilt and the write-ahead log emptied, so no deleted content stays on disk."""
+    with connect() as conn:
+        for table in ("run_files", "messages", "runs", "projects", "benchmarks"):
+            conn.execute(f"DELETE FROM {table}")  # table names are fixed, never input
+    conn = sqlite3.connect(config.db_path(), isolation_level=None)
+    try:
+        conn.execute("VACUUM")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
 
 
 # ─── Runs ────────────────────────────────────────────────────

@@ -219,6 +219,19 @@ class MessageBus:
                 self._history = []
             return deleted
 
+    def delete_all(self, delete: Callable[[], dict]) -> dict | None:
+        """Run `delete()` under the bus lock, so no task can start meanwhile, and
+        clear the live view. None if a task is running. The same rule as
+        delete_project: `delete` must not call back into the bus."""
+        with self._lock:
+            if self._task_status in BUSY:
+                return None
+            result = delete()
+            self.active_project_id = None
+            self.active_run_id = None
+            self._history = []
+            return result
+
     def start_run(self, project_id: str, run_id: int) -> None:
         """Route new messages to a run and start a fresh in-memory view."""
         with self._lock:

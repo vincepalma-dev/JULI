@@ -6,7 +6,7 @@ import threading
 
 from fastapi import APIRouter, HTTPException
 
-from juli import config, store
+from juli import config, data, store
 from juli.api.models import (
     AgentInfo,
     AgentMessageResponse,
@@ -33,6 +33,7 @@ def _run(engine, run, run_id: int) -> None:
         message_bus.set_task_status("error")
     finally:
         store.finish_run(run_id, result.status, result.tokens_in, result.tokens_out, result.cost_usd)
+        data.apply_retention()
 
 
 def _allowance_notices(engine, run, settings: dict, ignore_allowance: bool) -> None:

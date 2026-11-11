@@ -6,9 +6,20 @@ servers are saved here too; their tokens go to the keychain as well.
 
 from fastapi import APIRouter, HTTPException, Response
 
-from juli import config, keystore, mcp, roles
+from juli import config, data, keystore, mcp, roles
 from juli import providers as llm
-from juli.api.models import AgentCreate, AgentUpdates, KeyUpdates, McpName, McpServers, McpToken, ModeRequest, ProviderId, RunSettings
+from juli.api.models import (
+    AgentCreate,
+    AgentUpdates,
+    DataSettings,
+    KeyUpdates,
+    McpName,
+    McpServers,
+    McpToken,
+    ModeRequest,
+    ProviderId,
+    RunSettings,
+)
 from juli.local import crew
 
 router = APIRouter(prefix="/settings")
@@ -37,6 +48,7 @@ def get_settings() -> dict:
         "run": settings["run"],
         "mode": crew.current_mode(settings),
         "mcp_servers": _mcp_view(settings),
+        "data": settings["data"],
     }
 
 
@@ -95,6 +107,16 @@ def delete_agent(name: str) -> Response:
         del settings["agents"][name]
         config.save_settings(settings)
     return Response(status_code=204)
+
+
+@router.put("/data")
+def update_data_settings(body: DataSettings) -> dict:
+    """The retention period for run history. Runs past it are deleted at once."""
+    with config.settings_lock:
+        settings = config.load_settings()
+        settings["data"] = body.model_dump()
+        config.save_settings(settings)
+    return {"status": "saved", "data": settings["data"], "deleted_runs": data.apply_retention(settings)}
 
 
 @router.put("/run")

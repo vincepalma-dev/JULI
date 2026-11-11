@@ -38,7 +38,7 @@ import threading
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, fields
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from juli import config, harness, mcp, providers, roles, store, terminal, tools, workspace
@@ -131,7 +131,7 @@ def cast(crew: list[Agent], mode: str, no_devops: bool = False) -> dict[str, lis
 
 
 def month_start() -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
 
 
@@ -337,11 +337,7 @@ class Run:
             problem = self.model_problem(agent.model)
             if problem:
                 raise RuntimeError(f"{agent.name}: {problem}")
-            if self.budget and providers.cost(agent.model, 0, 0, self.endpoints) is None:
-                self.warn(
-                    f"price:{agent.model}",
-                    f"{agent.model} has no known price, so the budget cap can't count its cost. Set a token cap to limit it.",
-                )
+            self.warn_unpriced(agent)
         names = ", ".join(f"{a.name} ({a.model})" for a in self.agents)
         self.publish("System", f"Crew for this {self.mode} run: {names}", "system")
         for notice in self.notices:
@@ -909,6 +905,14 @@ class Run:
                 return "budget"
         return None
 
+    def warn_unpriced(self, agent: Agent) -> None:
+        """The budget cap counts cost, so it can't limit a cloud model whose price isn't known."""
+        if self.budget and providers.cost(agent.model, 0, 0, self.endpoints) is None:
+            self.warn(
+                f"price:{agent.model}",
+                f"{agent.model} has no known price, so the budget cap can't count its cost. Set a token cap to limit it.",
+            )
+
     def limit_reached(self, cap: str) -> None:
         label = f"budget cap of ${self.budget:.2f}" if cap == "budget" else f"token cap of {self.token_cap:,} tokens"
         limit = self.budget if cap == "budget" else self.token_cap
@@ -1169,7 +1173,15 @@ def say(content: str) -> bool:
 
 def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> dict:
     """Ask one agent about a finished run, with its output and earlier
-    follow-ups as context. The question and answer are stored with the run."""
+    follow-ups as context. The question and answer are stored with the run.
+
+    A follow-up is a small run of its own: its model calls pass the same
+    middleware as a run's (Privacy Mode, the token and budget caps, usage),
+    and the caps count this one answer. A cap that would be passed before
+    anything is sent raises Stopped; one that cuts the answer short keeps
+    what there is, with a notice. What a run would warn about (a model the
+    budget cap can't count, an allowance or rate limit running low) comes
+    back as warnings."""
     agent = next(a for a in build_crew(settings) if a.name == agent_name)
     history = store.run_messages(run_row["id"])
     output = _transcript([(m["agent_name"], m["content"]) for m in history if m["message_type"] == "agent"])
@@ -1178,6 +1190,8 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
     for m in history:
         if m["message_type"] not in ("question", "answer"):
             continue
+        if m["message_type"] == "answer" and not m["content"].strip():
+            continue  # a cap cut it short before any text
         role = "user" if m["message_type"] == "question" else "assistant"
         if turns and turns[-1]["role"] == role:
             turns[-1]["content"] += "\n\n" + m["content"]
@@ -1193,45 +1207,41 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
     messages = [{"role": "system", "content": system}, *turns]
     limit = agent.max_tool_rounds or int(settings["run"].get("max_tool_rounds") or config.DEFAULT_RUN["max_tool_rounds"])
 
-    texts: list[str] = []
-    tokens_in = tokens_out = 0
-    cost_usd: float | None = 0.0
-    for round_no in range(limit + 1):
-        if round_no == limit and offered:
-            messages.append({"role": "user", "content": f"You've used all {limit} tool rounds for this turn. Give your final answer now."})
-        reply = harness.Reply()
-        for item in providers.stream(
-            agent.model,
-            list(messages),
-            privacy=bool(settings["run"].get("privacy_mode")),
-            max_tokens=agent.max_tokens,
-            num_ctx=agent.num_ctx,
-            endpoints=settings.get("endpoints"),
-            tools=offered or None,
-        ):
-            if isinstance(item, providers.Usage):
-                reply.usage = item
-            elif isinstance(item, providers.ToolCall):
-                reply.tool_calls.append(item)
-            else:
-                reply.text += item
-        if reply.usage:
-            tokens_in, tokens_out = tokens_in + reply.usage.tokens_in, tokens_out + reply.usage.tokens_out
-            cost_usd = None if cost_usd is None or reply.usage.cost_usd is None else cost_usd + reply.usage.cost_usd
-        if reply.text.strip():
-            texts.append(reply.text)
-        if not reply.tool_calls or round_no == limit:
-            break
-        messages.append(harness.assistant_message(reply))
-        for i, call in enumerate(reply.tool_calls):
-            if i < MAX_TOOL_CALLS_PER_REPLY:
-                result = _read_tool(run_row["project_id"], call)
-            else:
-                result = ToolResult(f"Not run: at most {MAX_TOOL_CALLS_PER_REPLY} tool calls per reply.", "error")
-            messages.append(harness.tool_message(call, result))
-    reply_text = "\n\n".join(texts)
-    if not (tokens_in or tokens_out):
-        cost_usd = None
+    # The one agent as a run on a bus of its own: nothing is broadcast, and the
+    # bus keeps what each call recorded (its text, tokens and cost) and any warnings.
+    asking = Run(question, "full", [agent], settings=settings, bus=MessageBus())
+    asking.allowances = {}  # checked below instead, once this answer's cost is stored and counts
+    asking.warn_unpriced(agent)
+    notice: str | None = None
+    try:
+        for round_no in range(limit + 1):
+            if round_no == limit and offered:
+                messages.append(
+                    {"role": "user", "content": f"You've used all {limit} tool rounds for this turn. Give your final answer now."}
+                )
+            reply = asking._call(agent, messages, offered)
+            if not reply.tool_calls or round_no == limit:
+                break
+            messages.append(harness.assistant_message(reply))
+            for i, call in enumerate(reply.tool_calls):
+                if i < MAX_TOOL_CALLS_PER_REPLY:
+                    result = _read_tool(run_row["project_id"], call)
+                else:
+                    result = ToolResult(f"Not run: at most {MAX_TOOL_CALLS_PER_REPLY} tool calls per reply.", "error")
+                messages.append(harness.tool_message(call, result))
+    except Stopped as e:
+        if not (asking.tokens_in or asking.tokens_out):
+            raise Stopped(f"The question wasn't sent: {e}. Raise the cap in Settings to ask it.") from None
+        notice = f"The answer stops here: {e}."
+
+    warnings = [m.content for m in asking.bus.history if m.message_type == "warning"]
+    answers = [m for m in asking.bus.history if m.message_type == "agent"]
+    reply_text = "\n\n".join(m.content for m in answers if m.content.strip())
+    tokens_in = sum(m.tokens_in or 0 for m in answers)
+    tokens_out = sum(m.tokens_out or 0 for m in answers)
+    cost_usd: float | None = None
+    if (tokens_in or tokens_out) and all(m.cost_usd is not None for m in answers):
+        cost_usd = sum(m.cost_usd or 0.0 for m in answers)
 
     project_id, run_id = run_row["project_id"], run_row["id"]
     store.save_message(project_id, run_id, {"agent_name": "You", "content": question, "message_type": "question"})
@@ -1248,6 +1258,13 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
             "cost_usd": cost_usd,
         },
     )
+    near, used_up = allowance_report([agent], settings)
+    warnings += near + [f"{line}. New runs with it are blocked until next month." for line in used_up]
+    # Under the agent's own name, so they stay with its answer when the view shows only that agent.
+    for warning in warnings:
+        store.save_message(project_id, run_id, {"agent_name": agent.name, "content": warning, "message_type": "warning"})
+    if notice:
+        store.save_message(project_id, run_id, {"agent_name": agent.name, "content": notice, "message_type": "limit_reached"})
     return {
         "agent": agent.name,
         "reply": reply_text,
@@ -1255,6 +1272,8 @@ def follow_up(run_row: dict, agent_name: str, question: str, settings: dict) -> 
         "tokens_in": tokens_in,
         "tokens_out": tokens_out,
         "cost_usd": cost_usd,
+        "warnings": warnings,
+        "notice": notice,  # a cap cut the answer short
     }
 
 

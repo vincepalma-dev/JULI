@@ -125,6 +125,10 @@
             <label for="ep-key" class="label">API key (optional)</label>
             <input id="ep-key" v-model="endpoint.key" type="password" maxlength="500" class="field font-mono" autocomplete="off" />
           </div>
+          <p class="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2 text-xs leading-relaxed text-amber-100 sm:col-span-2">
+            <Icon name="alert" class="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+            <span><strong class="font-semibold">A server you don't run is a third party.</strong> It receives everything the agents using it send: your prompts, your code and the files they read. Add only servers you trust, and check their terms. Privacy Mode blocks every server outside this machine and your local network.</span>
+          </p>
           <div class="flex flex-wrap items-center gap-3 sm:col-span-2">
             <button type="submit" class="btn btn-primary" :disabled="adding">{{ adding ? 'Testing…' : 'Add and test' }}</button>
             <p v-if="endpointResult" class="text-sm" :class="endpointResult.ok ? 'text-emerald-300' : 'text-amber-200'" role="status">{{ endpointResult.text }}</p>

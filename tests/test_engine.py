@@ -591,6 +591,77 @@ def test_follow_up_respects_privacy_mode(client, monkeypatch):
     assert r.status_code == 409 and "Privacy Mode" in r.json()["detail"]
 
 
+def test_follow_up_that_would_pass_a_cap_is_not_sent(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    client.put("/api/settings/run", json={"token_cap": 10}, headers=AUTH)
+    r = client.post(f"/api/runs/{run_id}/chat", json={"agent": "Coder", "message": "Why this schema?"}, headers=AUTH)
+    assert r.status_code == 409
+    assert r.json()["detail"] == "The question wasn't sent: the token cap of 10 tokens was reached. Raise the cap in Settings to ask it."
+    assert models.calls == []
+    assert [m["message_type"] for m in store.run_messages(run_id)] == ["agent"]
+
+
+def test_follow_up_cut_short_by_a_cap_keeps_the_answer_so_far(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    settings = make_settings()
+    models.replies["ollama:plan"] = "one two three four five six seven eight nine ten"
+    engine.follow_up(store.get_run(run_id), "Planner", "q", settings)  # no cap: the whole answer
+    sent = engine.harness.estimate(models.calls[0][1])
+
+    # Each question counts on its own: the first one's tokens don't use up this cap.
+    capped = make_settings(token_cap=sent + 20)
+    answer = engine.follow_up(store.get_run(run_id), "Planner", "And again?", capped)
+    assert answer["reply"].startswith("one two") and "ten" not in answer["reply"]
+    assert answer["notice"] == f"The answer stops here: the token cap of {sent + 20:,} tokens was reached."
+    assert answer["tokens_in"] > 0 and answer["tokens_out"] > 0 and answer["cost_usd"] == 0.0
+    stored = store.run_messages(run_id)[-3:]
+    assert [m["message_type"] for m in stored] == ["question", "answer", "limit_reached"]
+    assert stored[1]["content"] == answer["reply"] and stored[2]["content"] == answer["notice"]
+    assert stored[2]["agent_name"] == "Planner"  # with its answer when the view shows only the Planner
+
+
+def test_follow_up_on_a_priced_model_stops_at_the_budget_cap(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    # 4000 output tokens at $10 per million would cost $0.04.
+    agents = {"Coder": {"role": "coder", "model": "openai:gpt-6.1-sol", "prompt": "Code it.", "max_tokens": 4000}}
+    with pytest.raises(engine.Stopped, match=r"the budget cap of \$0\.01 was reached"):
+        engine.follow_up(store.get_run(run_id), "Coder", "q", make_settings(agents, budget_usd=0.01))
+    assert models.calls == []
+
+
+def test_follow_up_warns_when_the_budget_cap_cannot_count_the_model(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    agents = {"Coder": {"role": "coder", "model": "openai:not-in-the-price-list", "prompt": "Code it."}}
+    warning = "openai:not-in-the-price-list has no known price, so the budget cap can't count its cost. Set a token cap to limit it."
+
+    answer = engine.follow_up(store.get_run(run_id), "Coder", "q", make_settings(agents, budget_usd=0.01))
+    assert answer["warnings"] == [warning] and answer["cost_usd"] is None and answer["notice"] is None
+    stored = store.run_messages(run_id)[-3:]
+    assert [(m["message_type"], m["agent_name"]) for m in stored] == [("question", "You"), ("answer", "Coder"), ("warning", "Coder")]
+    assert stored[2]["content"] == warning
+
+    # No budget cap, or a model it can count: nothing to warn about.
+    assert engine.follow_up(store.get_run(run_id), "Coder", "q", make_settings(agents))["warnings"] == []
+    assert engine.follow_up(store.get_run(run_id), "Planner", "q", make_settings(budget_usd=0.01))["warnings"] == []
+
+
+def test_follow_up_allowance_warnings_count_the_answer_itself(client, models):
+    pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
+    run_id = finished_run(pid)
+    agents = {"Coder": {"role": "coder", "model": "openai:gpt-6.1-sol", "prompt": "Code it."}}
+    settings = make_settings(agents, allowances={"openai": 0.8})
+    models.usage = (100_000, 50_000)  # $0.20 in and $0.50 out: each answer costs $0.70
+
+    first = engine.follow_up(store.get_run(run_id), "Coder", "q", settings)
+    assert first["warnings"] == ["openai has used $0.70 of its $0.80 monthly allowance"]
+    second = engine.follow_up(store.get_run(run_id), "Coder", "q", settings)
+    assert second["warnings"] == ["openai has used $1.40 of its $0.80 monthly allowance. New runs with it are blocked until next month."]
+
+
 # ─── turn_start ──────────────────────────────────────────────
 
 

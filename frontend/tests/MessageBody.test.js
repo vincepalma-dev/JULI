@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import MessageBody from '../src/components/MessageBody.vue'
+import { watchSaves } from './helpers.js'
 
 const blocks = text => mount(MessageBody, { props: { text } }).findAll('pre, p').map(w => [w.element.tagName, w.text()])
 
@@ -40,6 +41,17 @@ describe('MessageBody copy', () => {
     await flushPromises()
     expect(wrapper.find('button').text()).toBe('Copy')
     vi.useRealTimers()
+  })
+
+  it("downloads a block that names its file, under the file's own name", async () => {
+    const saved = watchSaves()
+    const wrapper = mount(MessageBody, { props: { text: '```python path=src/app.py\nprint(1)\n```\n```bash run\npytest\n```' } })
+    const downloads = wrapper.findAll('button').filter(b => b.text() === 'Download')
+    expect(downloads).toHaveLength(1) // the command has no file to be
+    await downloads[0].trigger('click')
+    expect(saved.map(s => s.name)).toEqual(['app.py'])
+    expect(await saved[0].blob.text()).toBe('print(1)\n')
+    vi.restoreAllMocks()
   })
 
   it('stays quiet when the clipboard is blocked', async () => {

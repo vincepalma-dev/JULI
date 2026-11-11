@@ -38,7 +38,7 @@
 
           <!-- Whole crew: every entry in order -->
           <div v-if="!juliView" class="space-y-5">
-            <TimelineItem v-for="m in group.items" :key="m.key" :m="m" v-bind="itemProps" @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
+            <TimelineItem v-for="m in group.items" :key="m.key" :m="m" v-bind="itemProps" :zip-project="m.key === group.filesKey ? projectId : null" @answered="relayAnswer" @open-file="p => $emit('open-file', p)" />
           </div>
 
           <!-- Juli only: the crew's work folded away, then one reply -->
@@ -71,6 +71,7 @@
                   </template>
                   <span>{{ formatTime(group.reply.timestamp) }}</span>
                 </p>
+                <ReplyActions :text="group.reply.content" :filename="group.run ? `juli-run-${group.run.id}.md` : 'juli.md'" :zip-project="group.filesKey ? projectId : null" />
               </div>
             </article>
 
@@ -101,13 +102,15 @@
 // The run view: every run of the project in one timeline, like a chat.
 // "Whole crew" shows each agent's message as it streams in and settles with
 // a footer (model, tokens, cost). "Juli only" folds the crew's work away and
-// shows one reply per run; anything that needs you stays in view.
+// shows one reply per run; anything that needs you stays in view. Every reply
+// can be copied or downloaded; a finished run that wrote files also offers them.
 import { ref, computed, watch, nextTick } from 'vue'
 import AgentAvatar from './AgentAvatar.vue'
 import Icon from './Icon.vue'
 import JuliMascot from './JuliMascot.vue'
 import MessageBody from './MessageBody.vue'
 import NowWorking from './NowWorking.vue'
+import ReplyActions from './ReplyActions.vue'
 import TimelineItem from './TimelineItem.vue'
 import { agentLabel, formatCost, formatTime, formatTokens, RUN_MODES } from '../labels.js'
 import { agentLook } from '../mascot.js'
@@ -126,6 +129,7 @@ const props = defineProps({
   view: { type: String, default: 'crew' }, // crew or juli
   activeRunId: { type: Number, default: null },
   totals: { type: Function, default: null }, // run id -> { tokens_in, tokens_out, cost_usd }
+  projectId: { type: String, default: null }, // the project shown, for "Download files"
 })
 const emit = defineEmits(['clear-filter', 'answered', 'open-file'])
 
@@ -164,10 +168,18 @@ function foldForJuli(group) {
   }
 }
 
-const shown = computed(() => {
-  if (props.filter) return props.timeline.map(g => ({ ...g, items: g.items.filter(m => m.agent_name === props.filter) }))
-  return juliView.value ? props.timeline.map(foldForJuli) : props.timeline
-})
+// "Download files" goes under the last reply of a run that has ended and wrote files.
+const ENDED = new Set(['complete', 'stopped', 'error'])
+function filesKey(group) {
+  if (!group.run || !ENDED.has(group.run.status) || !group.items.some(m => m.message_type === 'files')) return null
+  return group.items.findLast(m => m.message_type === 'agent')?.key ?? null
+}
+
+const shown = computed(() => props.timeline.map(g => {
+  const group = { ...g, filesKey: filesKey(g) }
+  if (props.filter) return { ...group, items: g.items.filter(m => m.agent_name === props.filter) }
+  return juliView.value ? foldForJuli(group) : group
+}))
 
 // The live line shows while the crew works or waits, and after a run ends (until the next one).
 const showLine = computed(() => Boolean(props.asking) || (props.status !== 'idle' && props.timeline.some(g => g.run)))

@@ -87,7 +87,7 @@ MCP servers are programs or URLs you add in Settings:
 
 A server you add runs code you chose to run; JULI can't make an untrustworthy server safe.
 
-Loop guards: each agent turn has a limit on tool rounds (25 by default), a reply runs at most 8 tool calls, an identical call is refused the third time unless something changed in between, and handoffs are limited per run and between any two agents. The token and budget caps count every model call of a tool loop, and Stop is checked between tool calls.
+Loop guards: each agent turn has a limit on tool rounds (25 by default), a reply runs at most 8 tool calls, an identical call is refused the third time unless something changed in between, and handoffs are limited per run and between any two agents. The token and budget caps count every model call of a tool loop, and Stop is checked between tool calls. A follow-up question about a finished run goes through the same checks (Privacy Mode, the caps, the monthly allowance), and the caps count each question on its own.
 
 ### Files the agents write
 
@@ -107,7 +107,7 @@ Deleted rows are overwritten in the database file (SQLite `secure_delete`), not 
 
 ### Privacy Mode
 
-Privacy Mode is enforced in the code that calls models, not in the dashboard. With it on, any call to a provider whose host isn't local (localhost, loopback or a private LAN address) is refused. In Hybrid and Cloud modes, your prompts and code go to the providers you picked.
+Privacy Mode is enforced in the code that calls models, not in the dashboard. With it on, any call to a provider whose host isn't local (localhost, loopback or a private LAN address) is refused. In Hybrid and Cloud modes, your prompts and code go to the providers you picked. An OpenAI-compatible server you add yourself is treated the same way: one outside this machine and the local network is a cloud provider, and whoever runs a server receives what the agents using it send.
 
 Voice input uses Google's online speech recognition, and JULI says so before it listens.
 

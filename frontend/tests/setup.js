@@ -5,6 +5,10 @@ import { enableAutoUnmount } from '@vue/test-utils'
 
 enableAutoUnmount(afterEach) // each test's components are gone before the next one
 
+// Node 25 and later have a localStorage of their own. It is unusable unless Node
+// is started with a file for it, and it hides jsdom's: the tests get jsdom's back.
+Object.defineProperty(globalThis, 'localStorage', { value: globalThis.jsdom.window.localStorage, configurable: true, writable: true })
+
 // Sidebar, ParticleBackground and TerminalDock read media queries in setup.
 window.matchMedia = query => ({
   matches: false,

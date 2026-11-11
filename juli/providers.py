@@ -27,7 +27,7 @@ import time
 import uuid
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
@@ -192,7 +192,7 @@ def retry_after(headers: Mapping[str, str] | None) -> float | None:
     except ValueError:
         pass
     try:
-        return max(0.0, (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds())
+        return max(0.0, (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds())
     except (TypeError, ValueError):
         return None
 

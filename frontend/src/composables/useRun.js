@@ -248,8 +248,11 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
 
   /** Ask one agent about a finished run. The answer isn't streamed: the line shows who's answering. */
   async function ask(runId, agent, question) {
-    const now = () => new Date().toISOString()
-    add({ run_id: runId, agent_name: 'You', content: question, message_type: 'question', timestamp: now() })
+    // Each entry gets its own instant: entries are de-duplicated by time, type and agent.
+    let tick = 0
+    const now = () => new Date(Date.now() + tick++).toISOString()
+    const asked = { run_id: runId, agent_name: 'You', content: question, message_type: 'question', timestamp: now() }
+    add(asked)
     asking.value = { agent, run_id: runId }
     try {
       const reply = await apiFetch(`/api/runs/${runId}/chat`, { method: 'POST', body: { agent, message: question } })
@@ -258,6 +261,17 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
         run_id: runId, agent_name: reply.agent, content: reply.reply, message_type: 'answer', timestamp: now(),
         model: reply.model, tokens_in: reply.tokens_in, tokens_out: reply.tokens_out, cost_usd: reply.cost_usd,
       })
+      // What a run says live: its warnings, then a cap that cut the answer short. They go the
+      // same way (a toast too), under the agent's name so its filter keeps them with the answer.
+      const notes = [...(reply.warnings || []).map(content => ({ content, message_type: 'warning' }))]
+      if (reply.notice) notes.push({ content: reply.notice, message_type: 'limit_reached' })
+      for (const note of notes) ingest({ run_id: runId, agent_name: reply.agent, timestamp: now(), ...note })
+    } catch (e) {
+      // The question wasn't taken (nor stored): it leaves the timeline. The box still holds its text.
+      const key = keyOf(asked)
+      messages.value = messages.value.filter(m => m.key !== key)
+      seen.delete(key)
+      throw e
     } finally {
       if (asking.value?.run_id === runId) asking.value = null
     }

@@ -324,6 +324,7 @@ def ask(
     agent: str = typer.Option("PlannerResearcher", "--agent", "-a", help="Which agent answers"),
     project: str = typer.Option("CLI", "--project", help="Project whose latest run to ask about"),
     run_id: int | None = typer.Option(None, "--run", help="A specific run id instead of the latest"),
+    ignore_allowance: bool = typer.Option(False, "--ignore-allowance", help="Ask even if a monthly allowance is used up"),
 ) -> None:
     """Ask an agent a follow-up question about a finished run."""
     from juli import providers
@@ -332,6 +333,12 @@ def ask(
     settings = config.load_settings()
     if agent not in settings["agents"]:
         console.print(f"No agent named {agent}.", style="red", markup=False)
+        raise typer.Exit(1)
+    _, blocked = engine.allowance_report([a for a in engine.build_crew(settings) if a.name == agent], settings)
+    if blocked and not ignore_allowance:
+        for line in blocked:
+            console.print(f"Monthly allowance reached: {line}.", style="red", markup=False)
+        console.print("Ask again with --ignore-allowance to continue.")
         raise typer.Exit(1)
     if run_id is None:
         runs = [r for r in store.get_runs(store.find_or_create_project(project)) if r["ended_at"]]
@@ -342,10 +349,13 @@ def ask(
         raise typer.Exit(1)
     try:
         answer = engine.follow_up(run_row, agent, question, settings)
-    except (providers.ProviderError, providers.PrivacyViolation) as e:
+    except (providers.ProviderError, providers.PrivacyViolation, engine.Stopped) as e:
         console.print(providers.redact(str(e)), style="red", markup=False)
         raise typer.Exit(1) from None
     console.print(answer["reply"], markup=False, highlight=False)
+    for line in [*answer["warnings"], answer["notice"]]:
+        if line:
+            console.print(line, style="yellow", markup=False)
     cost = "" if answer["cost_usd"] is None else f" · ${answer['cost_usd']:.4f}"
     console.print(f"[dim]{answer['model']} · {answer['tokens_in']} tokens in · {answer['tokens_out']} out{cost}[/]")
 

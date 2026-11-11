@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "description": "JULI — Real-time Multi-Agent Monitoring Dashboard",
   "type": "module",
+  "engines": {
+    "node": "^22.13.0 || ^24.0.0 || ^26.0.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",

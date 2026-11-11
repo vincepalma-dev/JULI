@@ -1,6 +1,7 @@
 // JULI end to end: the plan's verification list, against the real API and a
 // fake model server. The tests share one server and run in order.
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
@@ -9,8 +10,15 @@ const TOKEN = 'e2e-session'
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
 const AGENTS = ['PlannerResearcher', 'Coder', 'ReviewerSecurity', 'DevOps', 'TestMonitor', 'DocsDiagram']
 const ENDED = ['complete', 'stopped', 'error']
+const PYTHON = process.env.JULI_PYTHON || (process.platform === 'win32' ? resolve('../.venv/Scripts/python.exe') : 'python')
 
 test.describe.configure({ mode: 'serial' })
+
+/** A zip's entries as { name: text }, read (and so checked) with Python's zipfile: the dashboard has no zip reader. */
+function unzip(path) {
+  const code = 'import json, sys, zipfile\nwith zipfile.ZipFile(sys.argv[1]) as z:\n    print(json.dumps({n: z.read(n).decode() for n in z.namelist()}))'
+  return JSON.parse(execFileSync(PYTHON, ['-c', code, path], { encoding: 'utf8' }))
+}
 
 async function open(page) {
   await page.goto(`/#token=${TOKEN}`)
@@ -170,6 +178,38 @@ test('the workspace shows the files, the run diff and a zip', async ({ page }) =
   expect(download.suggestedFilename()).toMatch(/^juli-.*\.zip$/)
 })
 
+test('a reply downloads as Markdown, a code block as its file, and a finished run offers its files', async ({ page }) => {
+  // Text downloads are blobs made in the page: the dashboard's CSP must let them through.
+  const blocked = []
+  page.on('console', m => { if (m.type() === 'error' && /Content Security Policy/i.test(m.text())) blocked.push(m.text()) })
+  await open(page)
+  // The file's name and, once it has been saved completely (path() waits, and fails if it wasn't), where it is.
+  const saved = async button => {
+    const [download] = await Promise.all([page.waitForEvent('download'), button.click()])
+    const path = await download.path()
+    return { name: download.suggestedFilename(), path, bytes: readFileSync(path) }
+  }
+
+  // The run's last reply is the docs agent's: the reply as written, then its code block as the file it names.
+  const reply = await saved(page.getByTitle('Download this reply as a Markdown file').last())
+  expect(reply.name).toMatch(/^juli-run-\d+(-\w+)?\.md$/)
+  expect(reply.bytes.toString()).toContain('```markdown path=README.md\n# Calc\n\nadd(a, b) returns the sum.\n```')
+  const readme = await saved(page.getByTitle('Download README.md').last())
+  expect(readme.name).toBe('README.md')
+  expect(readme.bytes.toString()).toBe('# Calc\n\nadd(a, b) returns the sum.\n')
+
+  // The zip opens, holds the files the crew wrote as they wrote them (see fake_llm.py), and nothing of git's.
+  const zip = await saved(page.getByRole('button', { name: 'Download files' }).last())
+  expect(zip.name).toMatch(/^juli-.*\.zip$/)
+  const entries = unzip(zip.path)
+  const text = name => entries[name]?.replace(/\r\n/g, '\n').trimEnd() // the same on every OS
+  expect(text('calc.py')).toBe('def add(a, b):\n    return a + b')
+  expect(text('test_calc.py')).toBe('from calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3')
+  expect(text('README.md')).toBe('# Calc\n\nadd(a, b) returns the sum.')
+  expect(Object.keys(entries).filter(name => name === '.git' || name.startsWith('.git/'))).toEqual([])
+  expect(blocked).toEqual([])
+})
+
 test('Stop ends a run mid-turn and keeps its output', async ({ page, request }) => {
   await open(page)
   await setAgent(page, request, 'model', 'fake:fake-slow')
@@ -210,8 +250,7 @@ test('a token cap stops a local run', async ({ page, request }) => {
 })
 
 test('an MCP tool call asks first and its result reaches the agent', async ({ page, request }) => {
-  const python = process.env.JULI_PYTHON || (process.platform === 'win32' ? resolve('../.venv/Scripts/python.exe') : 'python')
-  const server = { transport: 'stdio', command: [python, fileURLToPath(new URL('../../tests/fixtures/mcp_server.py', import.meta.url))] }
+  const server = { transport: 'stdio', command: [PYTHON, fileURLToPath(new URL('../../tests/fixtures/mcp_server.py', import.meta.url))] }
   // In Privacy Mode a server outside the sandbox doesn't start, so this run is out of it.
   const { run } = await api(request, '/api/settings')
   // Later tests share this server: the settings come back even when an assertion fails.

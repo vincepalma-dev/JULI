@@ -10,7 +10,7 @@ settings["licenses"].
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -97,7 +97,7 @@ def accept_license(license_id: str) -> None:
     with config.settings_lock:
         settings = config.load_settings()
         licenses = settings.setdefault("licenses", {})
-        licenses.setdefault(license_id, {"accepted_at": datetime.now(timezone.utc).isoformat()})
+        licenses.setdefault(license_id, {"accepted_at": datetime.now(UTC).isoformat()})
         config.save_settings(settings)
 
 

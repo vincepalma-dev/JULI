@@ -1,4 +1,18 @@
-// Fake API replies for component tests.
+// Fake API replies for component tests, and a view of the files a page saves.
+import { vi } from 'vitest'
+
+/**
+ * The files saved through a download link, as { name, blob }, in order.
+ * It spies on the link's click, so restore mocks after the test.
+ */
+export function watchSaves() {
+  const saved = []
+  const blobs = []
+  vi.spyOn(URL, 'createObjectURL').mockImplementation(blob => { blobs.push(blob); return 'blob:test' })
+  vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function () { saved.push({ name: this.download, blob: blobs.at(-1) }) })
+  return saved
+}
+
 /**
  * Stub fetch with replies keyed by "METHOD /path" (the query string is
  * ignored unless the key has one). A reply is a body, a function

@@ -61,7 +61,7 @@ async def greet(websocket: WebSocket) -> dict | None:
         return None
     try:
         hello = await asyncio.wait_for(websocket.receive_json(), WS_AUTH_TIMEOUT)
-    except (asyncio.TimeoutError, ValueError, WebSocketDisconnect):
+    except (TimeoutError, ValueError, WebSocketDisconnect):
         hello = None
     if not (isinstance(hello, dict) and security.token_matches(websocket.app.state.token, hello.get("token"))):
         await websocket.close(code=4401)

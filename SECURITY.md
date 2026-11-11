@@ -124,6 +124,4 @@ CI scans the whole git history for secrets (gitleaks) and fails on any high-seve
 
 Known advisories in **development tools only**, which aren't part of what ships:
 
-- **Vite 5 and esbuild:** advisories against the dev server (`npm run dev`, used by `run.py`). It listens on localhost only, and `juli serve` doesn't use it. The fix needs Vite 6 or later, a planned upgrade.
-- **Vitest 3** (tinypool, `@vitest/mocker`): the advisories need prototype pollution in the test process, or a client on Vitest's server API, which `vitest run` doesn't expose. Vitest 4, which fixes them, needs Vite 6.
 - **minimatch and glob** (used by ESLint and `@vue/test-utils`): denial of service from attacker-written glob patterns. The only patterns are our own config.

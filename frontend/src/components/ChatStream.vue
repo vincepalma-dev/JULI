@@ -13,7 +13,8 @@
       <div class="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6">
         <!-- Empty state -->
         <div v-if="!timeline.length && !draft" class="flex flex-col items-center py-16 text-center">
-          <JuliMascot state="idle" :size="112" />
+          <!-- Juli herself, or the agent the view is filtered to -->
+          <JuliMascot state="idle" :size="112" v-bind="agentLook(agents[filter])" />
           <h2 class="mt-4 text-lg font-semibold text-white">Ready when you are</h2>
           <p class="mt-2 max-w-sm text-sm leading-relaxed text-slate-400">
             Describe what to build below. The crew plans it, writes the code, reviews and tests it, and the files land in this project's workspace.
@@ -109,6 +110,7 @@ import MessageBody from './MessageBody.vue'
 import NowWorking from './NowWorking.vue'
 import TimelineItem from './TimelineItem.vue'
 import { agentLabel, formatCost, formatTime, formatTokens, RUN_MODES } from '../labels.js'
+import { agentLook } from '../mascot.js'
 
 const props = defineProps({
   timeline: { type: Array, default: () => [] },

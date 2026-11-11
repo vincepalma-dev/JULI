@@ -217,6 +217,8 @@ describe('CrewBuilder looks', () => {
     await radio(wrapper, 'Idle style', 'Juggle').trigger('click')
     expect(JSON.parse(localStorage.getItem('juli-mascot'))).toEqual({ outfit: 'space-suit', accessory: 'none', idle: 'juggle' })
     expect(radio(wrapper, 'Outfit', 'Space suit').attributes('aria-checked')).toBe('true')
+    // The cards show the clothes alone: no juggling balls from her idle style.
+    expect(radio(wrapper, 'Outfit', 'Hoodie').find('.juli-ball-y').exists()).toBe(false)
     expect(fetch).not.toHaveBeenCalled()
   })
 })

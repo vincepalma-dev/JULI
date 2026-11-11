@@ -12,6 +12,8 @@ ProviderId = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}$")
 ApiKey = Annotated[str, StringConstraints(max_length=500)]
 Color = Annotated[str, StringConstraints(pattern=r"^#[0-9a-fA-F]{6}$")]
 Icon = Annotated[str, StringConstraints(pattern=r"^[a-z_]{1,32}$")]
+# A mascot outfit, accessory, idle style or working pose. The dashboard holds the list and falls back on an id it doesn't know.
+Look = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z-]{0,31}$")]
 # provider:model, split on the first colon (Ollama tags have their own colon).
 ModelRef = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,31}:[^\s]{1,200}$")]
 Role = Literal["planner", "coder", "reviewer", "tester", "docs", "custom"]
@@ -81,6 +83,10 @@ class AgentUpdate(Strict):
     prompt: AgentPrompt | None = None
     color: Color | None = None
     icon: Icon | None = None
+    outfit: Look | None = None
+    accessory: Look | None = None
+    idle: Look | None = None
+    pose: Look | None = None
     job_title: JobTitle | None = None
     max_tokens: MaxTokens | None = None  # null clears it
     max_tool_rounds: ToolRounds | None = None  # null: the run setting
@@ -93,6 +99,10 @@ class AgentCreate(Strict):
     prompt: AgentPrompt | None = None
     color: Color = "#6b7280"
     icon: Icon = "system"
+    outfit: Look = "default"  # default: the same as Juli herself
+    accessory: Look = "default"
+    idle: Look = "default"
+    pose: Look = "auto"  # auto: by role
     job_title: JobTitle = ""
     max_tokens: MaxTokens | None = None
     max_tool_rounds: ToolRounds | None = None

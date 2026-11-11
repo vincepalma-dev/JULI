@@ -79,7 +79,7 @@
 
         <!-- Text streaming in (the whole-crew view only; in Juli only the line below says who is working) -->
         <article v-if="!juliView && draft && draft.text && (!filter || filter === draft.agent)" class="mb-6 flex gap-3" aria-busy="true">
-          <AgentOrb :icon="agents[draft.agent]?.icon || 'system'" :color="colorOf(draft.agent)" size="sm" active class="mt-0.5" />
+          <AgentAvatar :agent="agents[draft.agent]" :color="colorOf(draft.agent)" active class="mt-0.5" />
           <div class="min-w-0 flex-1">
             <h3 class="mb-1.5 text-sm font-semibold" :style="{ color: colorOf(draft.agent) }">{{ agentLabel(draft.agent, agents) }}</h3>
             <MessageBody :text="draft.text" />
@@ -102,7 +102,7 @@
 // a footer (model, tokens, cost). "Juli only" folds the crew's work away and
 // shows one reply per run; anything that needs you stays in view.
 import { ref, computed, watch, nextTick } from 'vue'
-import AgentOrb from './AgentOrb.vue'
+import AgentAvatar from './AgentAvatar.vue'
 import Icon from './Icon.vue'
 import JuliMascot from './JuliMascot.vue'
 import MessageBody from './MessageBody.vue'

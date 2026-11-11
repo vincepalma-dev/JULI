@@ -1,6 +1,6 @@
 <template>
   <div class="flex items-center gap-3 py-2" role="status" aria-live="polite">
-    <JuliMascot :state="view.mascot" :size="44" />
+    <JuliMascot :state="view.mascot" :size="44" v-bind="view.look" />
     <div class="min-w-0 flex-1">
       <p class="text-sm font-medium" :class="view.tone">{{ view.text }}</p>
       <p v-if="view.meta" class="mt-0.5 text-xs text-slate-400" aria-hidden="true">{{ view.meta }}</p>
@@ -10,11 +10,13 @@
 
 <script setup>
 // The live line at the bottom of the run: Juli plus what the crew is doing.
+// While an agent works or answers, it is that agent's Juli.
 // Driven by turn_start (who and what), tool and command starts, the run status,
 // and follow-up questions.
 import { ref, computed, onUnmounted, watch } from 'vue'
 import JuliMascot from './JuliMascot.vue'
 import { agentLabel, workingPhrase, turnMascot, splitRef, toolPhrase } from '../labels.js'
+import { agentLook } from '../mascot.js'
 
 const props = defineProps({
   status: { type: String, default: 'idle' },
@@ -39,14 +41,15 @@ function elapsed(since) {
 
 const view = computed(() => {
   if (props.asking) {
-    return { mascot: 'follow-up', text: `${agentLabel(props.asking.agent, props.agents)} is answering…`, tone: 'text-slate-100' }
+    return { mascot: 'follow-up', look: agentLook(props.agents[props.asking.agent]), text: `${agentLabel(props.asking.agent, props.agents)} is answering…`, tone: 'text-slate-100' }
   }
   const turn = props.turn
   switch (props.status) {
     case 'running':
       if (!turn) return { mascot: 'idle', text: 'Starting the crew…', tone: 'text-slate-100' }
       return {
-        mascot: turnMascot(turn, props.streaming),
+        mascot: turnMascot(turn, props.streaming, props.agents),
+        look: agentLook(props.agents[turn.agent]),
         text: turn.command ? `Running ${turn.command.split(/\s+/).slice(0, 3).join(' ')}…`
           : turn.tool ? toolPhrase(turn.tool) : workingPhrase(turn, props.agents),
         meta: `${agentLabel(turn.agent, props.agents)} · ${splitRef(turn.model).model || turn.model || ''} · ${elapsed(turn.since)}`,

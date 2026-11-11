@@ -48,7 +48,7 @@
             :title="filter === name ? 'Show everyone' : `Show only ${agentLabel(name, agents)}`"
             @click="$emit('filter', filter === name ? null : name)"
           >
-            <AgentOrb :icon="agents[name].icon || 'system'" :color="agents[name].color || '#94a3b8'" :active="activeAgent === name" size="sm" />
+            <AgentAvatar :agent="agents[name]" :active="activeAgent === name" />
             <span class="min-w-0 flex-1">
               <span class="block text-sm font-medium text-slate-100">{{ agentLabel(name, agents) }}</span>
               <span class="block font-mono text-xs text-slate-400" style="overflow-wrap: anywhere">{{ agents[name].model }}</span>
@@ -71,7 +71,7 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import AgentOrb from './AgentOrb.vue'
+import AgentAvatar from './AgentAvatar.vue'
 import Icon from './Icon.vue'
 import JuliMascot from './JuliMascot.vue'
 import { agentLabel } from '../labels.js'

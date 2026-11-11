@@ -53,6 +53,8 @@ def test_unknown_project_is_404(client):
         {"name": "Ok", "prompt": "x" * 8001},
         {"name": "Ok", "job_title": "x" * 81},
         {"name": "Ok", "icon": "<svg>"},
+        {"name": "Ok", "outfit": "Lab Coat"},
+        {"name": "Ok", "pose": "x" * 33},
         {"name": "Ok", "model": "gpt4"},  # legacy keys are no longer model refs
         {"name": "Ok", "model": "openai: spaced"},
         {"name": "Ok", "role": "boss"},
@@ -67,6 +69,18 @@ def test_agent_validation(client, agent):
 def test_agent_update_validation(client):
     assert client.put("/api/settings/agents", json={"bad name": {}}, headers=AUTH).status_code == 422
     assert client.put("/api/settings/agents", json={"Coder": {"color": "#12345"}}, headers=AUTH).status_code == 422
+    assert client.put("/api/settings/agents", json={"Coder": {"idle": "<script>"}}, headers=AUTH).status_code == 422
+
+
+def test_agent_look_is_saved(client):
+    """An agent's mascot look: outfit, accessory, idle style and working pose."""
+    look = {"outfit": "rider", "accessory": "scarf", "idle": "ride", "pose": "devops"}
+    assert client.post("/api/settings/agents", json={"name": "Courier", **look}, headers=AUTH).status_code == 201
+    assert client.post("/api/settings/agents", json={"name": "Plain"}, headers=AUTH).status_code == 201
+    assert client.put("/api/settings/agents", json={"Plain": {"outfit": "hoodie"}}, headers=AUTH).status_code == 200
+    agents = client.get("/api/settings", headers=AUTH).json()["agents"]
+    assert {k: agents["Courier"][k] for k in look} == look
+    assert {k: agents["Plain"][k] for k in look} == {"outfit": "hoodie", "accessory": "default", "idle": "default", "pose": "auto"}
 
 
 def test_agent_conflict_and_missing(client):

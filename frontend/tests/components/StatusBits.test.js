@@ -136,19 +136,46 @@ describe('Sidebar', () => {
 })
 
 describe('JuliMascot', () => {
-  it('uses the sprite and still for a known state, and idle for an unknown one', () => {
-    const coder = mount(JuliMascot, { props: { state: 'coder', size: 44 } })
-    const style = coder.attributes('style')
-    expect(style).toContain('juli-coder-16f.webp')
-    expect(style).toContain('juli-coder.png')
-    expect(style).toContain('--juli-size: 44px')
+  const juli = props => mount(JuliMascot, { props })
+
+  it('draws a known state at the given size, and idle for an unknown one', () => {
+    const coder = juli({ state: 'coder-typing', size: 44 })
+    expect(coder.element.tagName.toLowerCase()).toBe('svg')
+    expect(coder.attributes('width')).toBe('44')
     expect(coder.attributes('aria-hidden')).toBe('true')
-    expect(mount(JuliMascot, { props: { state: 'dancing' } }).attributes('style')).toContain('juli-idle-16f.webp')
+    expect(coder.find('.juli-figure').classes()).toContain('juli--coder-typing')
+    expect(juli({ state: 'dancing' }).find('.juli-figure').classes()).toContain('juli--idle')
   })
 
-  it('plays "done" once', () => {
-    expect(mount(JuliMascot, { props: { state: 'done' } }).classes()).toContain('juli-mascot--once')
-    expect(mount(JuliMascot, { props: { state: 'idle' } }).classes()).not.toContain('juli-mascot--once')
+  it('poses her arms and face for the state', () => {
+    const style = state => juli({ state }).find('.juli-figure').attributes('style')
+    expect(style('idle')).toContain('--rs: -18deg')
+    expect(style('done')).toContain('--rs: -122deg') // arms up
+    expect(style('done')).toContain('--juli-accent: #10b981')
+    expect(juli({ state: 'done' }).find('.juli-blink').exists()).toBe(false) // happy eyes
+    expect(juli({ state: 'idle' }).find('.juli-blink').exists()).toBe(true)
+  })
+
+  it('gives her the things a state works with', () => {
+    expect(juli({ state: 'coder-typing' }).find('.juli-laptop-light').exists()).toBe(true)
+    expect(juli({ state: 'planner' }).find('.juli-clipboard').exists()).toBe(true)
+    expect(juli({ state: 'tester' }).find('.juli-flask').exists()).toBe(true)
+    expect(juli({ state: 'idle' }).find('.juli-laptop-light').exists()).toBe(false)
+    expect(juli({ state: 'waiting' }).find('.juli-fx').exists()).toBe(true) // the "?" bubble
+    expect(juli({ state: 'idle' }).find('.juli-fx').exists()).toBe(false)
+  })
+
+  it('draws the crew of three for a discussion, each with a different lanyard', () => {
+    const crew = juli({ state: 'discussion' }).findAll('.juli-figure')
+    expect(crew).toHaveLength(3)
+    expect(new Set(crew.map(f => /--juli-accent: (#\w+)/.exec(f.attributes('style'))[1])).size).toBe(3)
+  })
+
+  it('holds still when asked', () => {
+    const still = juli({ state: 'idle', still: true })
+    expect(still.classes()).toContain('juli-mascot--still')
+    expect(still.find('.juli-figure').classes()).toContain('juli-figure--still')
+    expect(juli({ state: 'idle' }).find('.juli-figure').classes()).not.toContain('juli-figure--still')
   })
 })
 

@@ -1,7 +1,7 @@
 <template>
   <!-- Agent reply / follow-up answer -->
   <article v-if="m.message_type === 'agent' || m.message_type === 'answer'" class="flex gap-3">
-    <img v-if="asJuli" src="/mascot/stills/juli-idle.png" alt="" width="32" height="32" class="mt-0.5 h-8 w-8 shrink-0" />
+    <JuliMascot v-if="asJuli" still :size="32" class="mt-0.5" />
     <AgentOrb v-else :icon="agents[m.agent_name]?.icon || 'system'" :color="colorOf(m.agent_name)" size="sm" class="mt-0.5" />
     <div class="min-w-0 flex-1">
       <h3 class="mb-1.5 text-sm font-semibold" :style="{ color: asJuli ? 'var(--color-juli-accent)' : colorOf(m.agent_name) }">
@@ -87,6 +87,7 @@
 import AgentOrb from './AgentOrb.vue'
 import DecisionCard from './DecisionCard.vue'
 import Icon from './Icon.vue'
+import JuliMascot from './JuliMascot.vue'
 import MessageBody from './MessageBody.vue'
 import { agentLabel, formatCost, formatTime, formatTokens, stripAnsi, toolIcon } from '../labels.js'
 

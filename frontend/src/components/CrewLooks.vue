@@ -27,7 +27,7 @@
           <legend class="label">Outfit</legend>
           <div class="grid grid-cols-3 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Outfit">
             <button v-for="o in choices(OUTFITS)" :key="o.id" type="button" role="radio" :aria-checked="value('outfit') === o.id" class="surface flex flex-col items-center gap-1 px-1 py-2 transition-colors hover:bg-white/[0.04]" :class="value('outfit') === o.id ? '!border-white/40' : ''" @click="set('outfit', o.id)">
-              <JuliMascot still :size="64" :outfit="o.id" :accessory="preview.accessory" :accent="preview.accent" />
+              <JuliMascot still :size="64" :outfit="o.id" :accessory="preview.accessory" idle="calm" :accent="preview.accent" />
               <span class="text-center text-xs text-slate-200">{{ o.name }}</span>
             </button>
           </div>
@@ -37,7 +37,7 @@
           <legend class="label">Accessory</legend>
           <div class="grid grid-cols-3 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Accessory">
             <button v-for="a in choices(ACCESSORIES)" :key="a.id" type="button" role="radio" :aria-checked="value('accessory') === a.id" class="surface flex flex-col items-center gap-1 px-1 py-2 transition-colors hover:bg-white/[0.04]" :class="value('accessory') === a.id ? '!border-white/40' : ''" @click="set('accessory', a.id)">
-              <JuliMascot bust still :size="48" :outfit="preview.outfit" :accessory="a.id" :accent="preview.accent" />
+              <JuliMascot bust still :size="48" :outfit="preview.outfit" :accessory="a.id" idle="calm" :accent="preview.accent" />
               <span class="text-center text-xs text-slate-200">{{ a.name }}</span>
             </button>
           </div>

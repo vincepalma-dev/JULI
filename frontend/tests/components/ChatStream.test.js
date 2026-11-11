@@ -24,6 +24,17 @@ describe('ChatStream', () => {
     expect(mountStream({ timeline: [] }).text()).toContain('Ready when you are')
   })
 
+  it("shows the filtered agent's own Juli while the project is empty", () => {
+    const dressed = { ...agents, Planner: { color: '#6366f1', outfit: 'hoodie', idle: 'dance' } }
+    const figure = props => mountStream({ timeline: [], agents: dressed, ...props }).find('.juli-figure')
+    expect(figure({ filter: 'Planner' }).classes()).toContain('juli-idle--dance')
+    expect(figure({ filter: 'Planner' }).attributes('style')).toContain('--juli-accent: #6366f1')
+    expect(figure({ filter: 'Planner' }).attributes('style')).toContain('--juli-sleeve: #a78bfa') // the hoodie
+    // No filter: Juli herself.
+    expect(figure().classes()).toContain('juli-idle--calm')
+    expect(figure().attributes('style')).toContain('--juli-sleeve: #f1f5f9')
+  })
+
   it("shows each run's task with its mode and status, then the whole crew in order", () => {
     const wrapper = mountStream()
     const text = wrapper.text()

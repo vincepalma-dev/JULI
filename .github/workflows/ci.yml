@@ -84,7 +84,10 @@ jobs:
         run: |
           npm ci
           npm run build
-          npx playwright install --with-deps chromium
+          # The runner already has the libraries Chromium needs; this only adds fonts.
+          # So an outage of the package servers, or a slow one, must not fail the job.
+          timeout 180 npx playwright install-deps chromium || echo "::warning::Could not install system packages; using the runner's own."
+          npx playwright install chromium
       # The sandbox test runs a command in this image; JULI never pulls images itself.
       - run: docker pull ubuntu:24.04
       - working-directory: frontend

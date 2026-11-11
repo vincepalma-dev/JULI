@@ -154,7 +154,7 @@ def follow_up(run_id: int, body: FollowUp) -> dict:
         raise HTTPException(409, "Monthly allowance reached: " + "; ".join(blocked))
     try:
         return engine.follow_up(run, body.agent, body.message, settings)
-    except providers.PrivacyViolation as e:
+    except (providers.PrivacyViolation, engine.Stopped) as e:  # Stopped: a cap, before anything was sent
         raise HTTPException(409, str(e)) from None
     except providers.ProviderError as e:
         raise HTTPException(502, providers.redact(str(e))) from None

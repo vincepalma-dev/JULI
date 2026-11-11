@@ -8,6 +8,10 @@
             <Icon :name="copied === i ? 'check' : 'copy'" class="h-3.5 w-3.5" />
             {{ copied === i ? 'Copied' : 'Copy' }}
           </button>
+          <button v-if="block.path" type="button" class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-400 hover:text-white" :title="`Download ${fileName(block.path)}`" @click="saveText(block.code + '\n', fileName(block.path))">
+            <Icon name="download" class="h-3.5 w-3.5" />
+            Download
+          </button>
         </div>
         <pre class="overflow-x-auto px-3 py-2.5 font-mono text-xs leading-relaxed text-slate-200">{{ block.code }}</pre>
       </div>
@@ -18,12 +22,17 @@
 
 <script setup>
 // Message text with fenced code blocks shown as code. An unclosed fence (text
-// still streaming in) stays plain text until it closes.
+// still streaming in) stays plain text until it closes. A block that names
+// its file (path=…) can be downloaded under that name.
 import { ref, computed } from 'vue'
 import Icon from './Icon.vue'
+import { saveText } from '../api.js'
 
 const props = defineProps({ text: { type: String, default: '' } })
 const copied = ref(-1)
+
+// A download's name can't hold folders: src/app.py saves as app.py.
+const fileName = path => path.split(/[\\/]/).pop() || 'code.txt'
 
 const blocks = computed(() => {
   const out = []

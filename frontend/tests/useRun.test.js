@@ -139,6 +139,22 @@ describe('useRun follow-ups and refresh', () => {
     expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ agent: 'Coder', message: 'Why SQLite?' })
   })
 
+  it("shows a follow-up's warnings and a cap that cut it short, as a run's are: in the timeline and as toasts", async () => {
+    const warned = []
+    const run = useRun({ onWarning: m => warned.push(m.content) })
+    run.started(1, 'task', 'full')
+    const notice = 'The answer stops here: the token cap of 2,000 tokens was reached.'
+    const warnings = ['fake:model has no known price', 'openai rate limit running low']
+    fetch.mockImplementation(async () => ({ ok: true, status: 200, json: async () => ({ agent: 'Coder', reply: 'Because', model: 'ollama:code', warnings, notice }) }))
+    await run.ask(1, 'Coder', 'Why SQLite?')
+    expect(run.messages.value.map(m => [m.message_type, m.content])).toEqual([
+      ['question', 'Why SQLite?'], ['answer', 'Because'], ['warning', warnings[0]], ['warning', warnings[1]], ['limit_reached', notice],
+    ])
+    expect(warned).toEqual([...warnings, notice])
+    // Under the answering agent's name, so a view filtered to that agent keeps them.
+    expect(run.messages.value.slice(2).every(m => m.agent_name === 'Coder')).toBe(true)
+  })
+
   it('drops an answer that arrives after another project is shown', async () => {
     const run = useRun()
     run.started(1, 'task', 'full')

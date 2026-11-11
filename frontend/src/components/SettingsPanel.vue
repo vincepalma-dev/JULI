@@ -8,7 +8,7 @@
 
     <!-- Run limits -->
     <form v-if="tab === 'run'" class="space-y-5" @submit.prevent="saveRun">
-      <p class="hint">Limits are off unless you set them. When a limit is reached, the run stops and keeps its output so far.</p>
+      <p class="hint">Limits are off unless you set them. When a limit is reached, the run stops and keeps its output so far. A follow-up question counts on its own, like a small run.</p>
       <div class="grid gap-4 sm:grid-cols-2">
         <div>
           <label for="budget" class="label">Budget cap per run (US$)</label>

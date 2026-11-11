@@ -30,13 +30,28 @@ export function getToken() {
  * A failed API call. `detail` is the server's detail as sent: usually a
  * string, but some 409s carry an object, e.g. {message, confirm} before a push
  * or {message, license} before a download that needs a licence accepted.
+ * `stale` marks a request the running backend didn't know (see staleBackend).
  */
 export class ApiError extends Error {
-  constructor(status, message, detail = null) {
+  constructor(status, message, detail = null, stale = false) {
     super(message)
     this.status = status
     this.detail = detail
+    this.stale = stale
   }
+}
+
+const STALE_BACKEND = "This dashboard is newer than the JULI backend that's running, so the backend didn't understand the request. Stop JULI and start it again."
+
+/**
+ * The page asked for something the running backend doesn't know: a field it
+ * rejects, or a route it lacks (the framework's own 404 and 405; JULI's 404s
+ * say what wasn't found). That happens when JULI keeps running while its code
+ * is updated and the dashboard rebuilt.
+ */
+function staleBackend(status, detail) {
+  if (status === 422) return Array.isArray(detail) && detail.some(d => d.type === 'extra_forbidden')
+  return (status === 404 && detail === 'Not Found') || (status === 405 && detail === 'Method Not Allowed')
 }
 
 function detailText(detail) {
@@ -58,6 +73,7 @@ async function request(path, { body, headers, ...options } = {}) {
     try {
       detail = (await res.json()).detail ?? null
     } catch { /* not JSON */ }
+    if (staleBackend(res.status, detail)) throw new ApiError(res.status, STALE_BACKEND, detail, true)
     throw new ApiError(res.status, detailText(detail) || `${res.status} ${res.statusText}`, detail)
   }
   return res
@@ -71,7 +87,15 @@ export async function apiFetch(path, options) {
 
 /** Download an authenticated file (e.g. the workspace zip) and save it. */
 export async function apiDownload(path, filename) {
-  const blob = await (await request(path)).blob()
+  saveBlob(await (await request(path)).blob(), filename)
+}
+
+/** Save text the page already has as a file, e.g. a reply as Markdown. */
+export function saveText(text, filename, type = 'text/plain') {
+  saveBlob(new Blob([text], { type: `${type};charset=utf-8` }), filename)
+}
+
+function saveBlob(blob, filename) {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url

@@ -21,7 +21,7 @@ import sqlite3
 import stat
 import sys
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from juli import config, keystore, mcp, providers, store
@@ -34,7 +34,7 @@ def apply_retention(settings: dict | None = None) -> int:
     days = ((settings or config.load_settings()).get("data") or {}).get("retention_days")
     if not days:
         return 0
-    before = (datetime.now(timezone.utc) - timedelta(days=int(days))).isoformat()
+    before = (datetime.now(UTC) - timedelta(days=int(days))).isoformat()
     try:
         deleted = store.prune_runs(before)
     except sqlite3.Error:

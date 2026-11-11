@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import stat
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -13,7 +13,7 @@ from .test_engine import make_settings
 
 
 def days_ago(n: float) -> str:
-    return (datetime.now(timezone.utc) - timedelta(days=n)).isoformat()
+    return (datetime.now(UTC) - timedelta(days=n)).isoformat()
 
 
 @pytest.fixture

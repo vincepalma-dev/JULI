@@ -396,6 +396,37 @@ def test_follow_up_answers_every_call_and_asks_to_finish_at_the_limit(models, pr
     assert last[-1] == {"role": "user", "content": "You've used all 1 tool rounds for this turn. Give your final answer now."}
 
 
+def test_follow_up_caps_count_every_tool_round(models, project):
+    def finished_run():
+        run_id = store.create_run(project, "Build", "code")
+        store.finish_run(run_id, "complete")
+        return store.get_run(run_id)
+
+    def reads_then_answers():
+        return [[call("read_file", path="app.py")], "It subtracts."]
+
+    # With no cap, to learn what the first call sends.
+    models.script["ollama:code"] = reads_then_answers()
+    engine.follow_up(finished_run(), "Coder", "What does add do?", make_settings())
+    first = harness.estimate(models.calls[0][1])
+
+    # Room for the first call (4000 is the Coder's max output), not for a second one with the file in it.
+    models.calls.clear()
+    models.script["ollama:code"] = reads_then_answers()
+    run_row = finished_run()
+    answer = engine.follow_up(run_row, "Coder", "What does add do?", make_settings(token_cap=first + 4000 + 16))
+    assert len(models.calls) == 1
+    assert answer["reply"] == "" and (answer["tokens_in"], answer["tokens_out"]) == (10, 5)
+    assert answer["notice"].startswith("The answer stops here: the token cap of")
+
+    # The empty answer isn't part of the next question's thread.
+    models.script["ollama:code"] = ["It subtracts."]
+    engine.follow_up(run_row, "Coder", "So?", make_settings())
+    thread = models.calls[-1][1]
+    assert [m["role"] for m in thread] == ["system", "user"]
+    assert "What does add do?" in thread[1]["content"] and thread[1]["content"].endswith("So?")
+
+
 # ─── Read-only tools ─────────────────────────────────────────
 
 

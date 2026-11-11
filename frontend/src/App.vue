@@ -68,6 +68,7 @@
             :view="view"
             :active-run-id="run.activeRunId.value"
             :totals="run.totals"
+            :project-id="activeProjectId"
             @clear-filter="filter = null"
             @answered="answered"
             @open-file="openFile"

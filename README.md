@@ -20,8 +20,8 @@ Run it entirely on-device with local models, or bring your own cloud API keys. Y
 
 ## Requirements
 
-- **Python 3.10** or later.
-- **Node.js 20.19** or later, to build the dashboard (once, on first start).
+- **Python 3.11 to 3.14.**
+- **Node.js 22.13 or later** (22, 24 or 26), to build the dashboard (once, on first start).
 - **Optional:**
   - [Ollama](https://ollama.com), for on-device models.
   - Docker, for the sandbox that lets safe test commands run without asking.
@@ -115,6 +115,7 @@ A nightly workflow downloads a small real model with Ollama, benchmarks it and r
 | 6 | Dashboard UI for all of the above |
 | 7 | Tooling: tests, linting, type checks, CI, secret scanning, docs |
 | 8 | Agent harness: middleware around every model call, a tool loop with built-in and MCP tools, handoffs between agents |
+| 9 | Foundations: supported Python and Node versions, copy and download for replies and files, run limits on follow-up questions |
 
 ## Credits
 

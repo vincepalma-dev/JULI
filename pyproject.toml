@@ -9,7 +9,7 @@ description = "A local-first crew of AI agents that builds software on your own 
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     # LLM providers (OpenAI-compatible, Anthropic) and Ollama over HTTP.
     # The SDK floors are the versions the test suite runs on; both use httpx2.
@@ -67,14 +67,12 @@ juli = ["providers.json"]
 
 [tool.ruff]
 line-length = 140
-# The target comes from requires-python (3.10), so UP017 (datetime.UTC) and
-# UP041 (TimeoutError), which need 3.11, stay off.
 
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = ["typer.Option", "typer.Argument"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

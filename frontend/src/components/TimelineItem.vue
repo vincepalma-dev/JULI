@@ -15,6 +15,7 @@
         <span v-if="m.model">{{ m.cost_usd == null ? 'no price' : formatCost(m.cost_usd) }}</span>
         <span>{{ formatTime(m.timestamp) }}</span>
       </p>
+      <ReplyActions :text="m.content" :filename="replyFile" :zip-project="zipProject" />
     </div>
   </article>
 
@@ -84,11 +85,13 @@
 // One timeline entry: an agent's reply, your note or question, a decision
 // card, files written, a command result, a tool call, or a warning, error or
 // system line.
+import { computed } from 'vue'
 import AgentAvatar from './AgentAvatar.vue'
 import DecisionCard from './DecisionCard.vue'
 import Icon from './Icon.vue'
 import JuliMascot from './JuliMascot.vue'
 import MessageBody from './MessageBody.vue'
+import ReplyActions from './ReplyActions.vue'
 import { agentLabel, formatCost, formatTime, formatTokens, stripAnsi, toolIcon } from '../labels.js'
 
 const props = defineProps({
@@ -98,10 +101,17 @@ const props = defineProps({
   answered: { type: Object, default: () => ({}) },
   models: { type: Array, default: () => [] },
   asJuli: { type: Boolean, default: false }, // "Juli only" view: replies speak as Juli
+  zipProject: { type: String, default: null }, // on the last reply of a run that wrote files: the project to download
 })
 defineEmits(['answered', 'open-file'])
 
 const colorOf = name => props.agents[name]?.color || '#94a3b8'
+
+// The reply as a Markdown file, e.g. juli-run-12-Coder.md.
+const replyFile = computed(() => {
+  const run = props.m.run_id == null ? '' : `run-${props.m.run_id}-`
+  return `juli-${run}${props.m.agent_name}${props.m.message_type === 'answer' ? '-follow-up' : ''}.md`
+})
 
 function commandTone(status) {
   return status === 'passed' || status === 'ok' ? 'bg-emerald-500/15 text-emerald-300'

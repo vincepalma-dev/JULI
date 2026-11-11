@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import TimelineItem from '../../src/components/TimelineItem.vue'
+import { serveApi, watchSaves } from '../helpers.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 const agents = { SecurityAuditor: { color: '#ef4444', job_title: 'Auditor' } }
 const item = (m, props = {}) => mount(TimelineItem, { props: { m: { key: 'k', timestamp: '2026-11-10T00:00:00Z', ...m }, agents, ...props } })
@@ -24,6 +27,54 @@ describe('TimelineItem', () => {
     const wrapper = item({ message_type: 'answer', agent_name: 'SecurityAuditor', content: 'Because.' }, { asJuli: true })
     expect(wrapper.find('h3').text()).toContain('Juli')
     expect(wrapper.find('h3').text()).toContain('follow-up from Auditor')
+  })
+
+  it('copies a reply and downloads it as a Markdown file named for the run and the agent', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const saved = watchSaves()
+    const wrapper = item({ message_type: 'agent', agent_name: 'SecurityAuditor', content: '# Audit\nAll good.', run_id: 12 })
+    const button = label => wrapper.findAll('button').find(b => b.text() === label)
+
+    await button('Copy').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith('# Audit\nAll good.')
+    expect(button('Copied')).toBeTruthy()
+    vi.advanceTimersByTime(1500)
+    await flushPromises()
+    expect(button('Copy')).toBeTruthy()
+
+    await button('Download').trigger('click')
+    expect(saved.map(s => s.name)).toEqual(['juli-run-12-SecurityAuditor.md'])
+    expect(await saved[0].blob.text()).toBe('# Audit\nAll good.')
+    expect(button('Download files')).toBeUndefined() // only at the end of a run that wrote files
+    vi.useRealTimers()
+  })
+
+  it('names a follow-up answer and a reply from before runs existed', async () => {
+    const saved = watchSaves()
+    const download = async m => item(m).findAll('button').find(b => b.text() === 'Download').trigger('click')
+    await download({ message_type: 'answer', agent_name: 'Coder', content: 'Because.', run_id: 3 })
+    await download({ message_type: 'agent', agent_name: 'Coder', content: 'Old.' })
+    expect(saved.map(s => s.name)).toEqual(['juli-run-3-Coder-follow-up.md', 'juli-Coder.md'])
+  })
+
+  it("offers the project's files on the reply that ends a run, and says why a download failed", async () => {
+    const saved = watchSaves()
+    serveApi({ 'GET /api/projects/abcdef123456/workspace/zip': new Blob(['zip']) })
+    const wrapper = item({ message_type: 'agent', agent_name: 'Coder', content: 'Done.', run_id: 1 }, { zipProject: 'abcdef123456' })
+    const files = () => wrapper.findAll('button').find(b => b.text() === 'Download files')
+    await files().trigger('click')
+    await flushPromises()
+    expect(saved.map(s => s.name)).toEqual(['juli-abcdef12.zip'])
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+
+    serveApi({ 'GET /api/projects/abcdef123456/workspace/zip': { status: 404, body: { detail: 'Project not found' } } })
+    await files().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').text()).toBe('Project not found')
+    expect(saved).toHaveLength(1)
   })
 
   it('shows your note and your question', () => {

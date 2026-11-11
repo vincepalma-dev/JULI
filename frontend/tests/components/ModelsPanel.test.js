@@ -154,6 +154,7 @@ describe('ModelsPanel', () => {
     expect(wrapper.text()).toContain('Local')
     const forms = wrapper.findAll('form')
     const add = forms[forms.length - 1]
+    expect(add.text()).toContain("A server you don't run is a third party.") // said before anything is added
     await wrapper.find('#ep-id').setValue('fake')
     await wrapper.find('#ep-label').setValue('Fake LLM')
     await wrapper.find('#ep-url').setValue('http://127.0.0.1:8099/v1')

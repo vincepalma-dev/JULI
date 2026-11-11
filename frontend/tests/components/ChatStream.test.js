@@ -63,6 +63,19 @@ describe('ChatStream', () => {
     expect(folded.text()).not.toContain('Use SQLite')
   })
 
+  it('offers "Download files" once, under the last reply of a finished run that wrote files', () => {
+    const offers = props => mountStream({ projectId: 'p1', ...props }).findAllComponents({ name: 'ReplyActions' }).map(a => [a.props('filename'), a.props('zipProject')])
+    expect(offers()).toEqual([['juli-run-1-Planner.md', null], ['juli-run-1-Coder.md', 'p1']])
+    // In "Juli only": under Juli's reply (the crew's own replies are folded away above it).
+    expect(offers({ view: 'juli' }).at(-1)).toEqual(['juli-run-1.md', 'p1'])
+    // Not while the run is live, and not for a run that wrote nothing.
+    expect(offers({ timeline: [{ run: { ...run, status: 'running' }, items }], status: 'running' }).every(([, zip]) => zip === null)).toBe(true)
+    expect(offers({ timeline: [{ run, items: items.filter(m => m.message_type !== 'files') }] }).every(([, zip]) => zip === null)).toBe(true)
+    // With one agent shown, only if the last reply is theirs.
+    expect(offers({ filter: 'Planner' })).toEqual([['juli-run-1-Planner.md', null]])
+    expect(offers({ filter: 'Coder' })).toEqual([['juli-run-1-Coder.md', 'p1']])
+  })
+
   it('folds tool calls with the rest of the crew work in "Juli only"', () => {
     const tool = msg('m3', 'tool', 'Coder', 'read_file calc.py', { data: { tool: 'read_file', status: 'ok', output: 'x' } })
     const wrapper = mountStream({ view: 'juli', timeline: [{ run, items: [items[0], tool, items[3]] }] })

@@ -105,6 +105,21 @@ def test_ask_errors(models):
     assert failed.exit_code == 1 and "can't reach Ollama" in failed.text
 
 
+def test_ask_goes_through_the_allowance_and_the_caps(models, monkeypatch):
+    assert run("--plan").exit_code == 0
+    asked = len(models.calls)
+    config.save_settings(make_settings(token_cap=10))
+    capped = invoke("ask", "Why?", "--agent", "Planner")
+    assert capped.exit_code == 1 and "The question wasn't sent: the token cap of 10 tokens was reached." in capped.text
+
+    config.save_settings(make_settings())
+    monkeypatch.setattr(engine, "allowance_report", lambda agents, settings: ([], ["openai: $10.00 of $10.00"]))
+    blocked = invoke("ask", "Why?", "--agent", "Planner")
+    assert blocked.exit_code == 1 and "Monthly allowance reached: openai: $10.00 of $10.00." in blocked.text
+    assert len(models.calls) == asked
+    assert invoke("ask", "Why?", "--agent", "Planner", "--ignore-allowance").exit_code == 0
+
+
 # ─── Workspace ───────────────────────────────────────────────
 
 

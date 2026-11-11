@@ -36,6 +36,17 @@ describe('turnMascot', () => {
     expect(turnMascot({ role: 'reviewer' }, true)).toBe('reviewer')
     expect(turnMascot({ role: 'coder', activity: 'discussing the plan' }, true)).toBe('discussion')
   })
+
+  it("uses an agent's own working pose before its role", () => {
+    const agents = { DevOps: { pose: 'devops' }, Auditor: { pose: 'coder' }, Helper: { pose: 'auto' }, Odd: { pose: 'flying' } }
+    expect(turnMascot({ agent: 'DevOps', role: 'custom' }, true, agents)).toBe('devops')
+    expect(turnMascot({ agent: 'Auditor', role: 'reviewer' }, false, agents)).toBe('coder-thinking')
+    expect(turnMascot({ agent: 'Helper', role: 'tester' }, true, agents)).toBe('tester')
+    expect(turnMascot({ agent: 'Odd', role: 'docs' }, true, agents)).toBe('docs') // an unknown pose: by role
+    expect(turnMascot({ agent: 'Helper', role: 'custom' }, true, agents)).toBe('coder-typing')
+    // Fixing a failed command is always shown as coding.
+    expect(turnMascot({ agent: 'DevOps', role: 'custom', activity: 'fixing a failed command' }, true, agents)).toBe('coder-typing')
+  })
 })
 
 describe('formatting', () => {

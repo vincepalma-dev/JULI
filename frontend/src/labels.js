@@ -3,6 +3,7 @@
 export const MASCOT_STATES = [
   'idle', 'waiting', 'done', 'stopped', 'error',
   'planner', 'coder', 'coder-thinking', 'coder-typing', 'reviewer', 'tester', 'docs',
+  'devops', 'security', 'analyst',
   'discussion', 'follow-up',
 ]
 
@@ -53,15 +54,18 @@ export function toolIcon(tool) {
   return 'wrench'
 }
 
-/** Which mascot loop fits a turn. `streaming`: text has started to arrive. */
-export function turnMascot(turn, streaming) {
+/**
+ * Which mascot pose fits a turn. `streaming`: text has started to arrive.
+ * An agent's own working pose (its "pose" setting) comes before its role.
+ */
+export function turnMascot(turn, streaming, agents = {}) {
   if (turn.activity === 'discussing the plan') return 'discussion'
-  if (turn.role === 'coder' || turn.activity === 'fixing a failed command') {
-    return streaming ? 'coder-typing' : 'coder-thinking'
-  }
-  if (['planner', 'reviewer', 'tester', 'docs'].includes(turn.role)) return turn.role
+  const chosen = agents[turn.agent]?.pose
+  const pose = WORK_POSES.includes(chosen) ? chosen : turn.role
+  if (pose !== 'coder' && turn.activity !== 'fixing a failed command' && WORK_POSES.includes(pose)) return pose
   return streaming ? 'coder-typing' : 'coder-thinking'
 }
+const WORK_POSES = ['planner', 'coder', 'reviewer', 'tester', 'docs', 'devops', 'security', 'analyst']
 
 export const RUN_MODES = [
   { id: 'full', label: 'Build', hint: 'Plan, code and review, then tests and docs' },

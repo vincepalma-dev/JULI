@@ -1,13 +1,22 @@
 <template>
   <SidePanel :open="open" title="Crew" icon="users" wide @close="$emit('close')">
+    <template #tabs>
+      <div class="tab-bar" role="tablist" aria-label="Crew sections">
+        <button v-for="t in TABS" :key="t.id" type="button" role="tab" class="tab" :aria-selected="tab === t.id" @click="tab = t.id">{{ t.label }}</button>
+      </div>
+    </template>
+
+    <!-- Looks: what Juli and each agent wear, and how they idle and work -->
+    <CrewLooks v-if="tab === 'looks'" :agents="settings.agents" :status="status" @save="save" />
+
     <!-- Where the models run -->
-    <section class="mb-6">
+    <section v-if="tab === 'agents'" class="mb-6">
       <h3 class="mb-2 text-sm font-semibold text-white">Where models run</h3>
       <ModeSwitch :mode="settings.mode || 'custom'" :cloud-models="cloudModels" :locked="locked" @changed="$emit('mode-changed', $event)" @error="error = $event.message" />
     </section>
 
     <!-- Auto-Crew -->
-    <section class="surface mb-6 p-4">
+    <section v-if="tab === 'agents'" class="surface mb-6 p-4">
       <div class="flex flex-wrap items-center gap-3">
         <div class="min-w-0 flex-1">
           <h3 class="text-sm font-semibold text-white">Auto-Crew</h3>
@@ -48,11 +57,11 @@
     <p v-if="error" role="alert" class="mb-4 text-sm text-red-300">{{ error }}</p>
 
     <!-- Agents -->
-    <section class="space-y-3">
+    <section v-if="tab === 'agents'" class="space-y-3">
       <h3 class="text-sm font-semibold text-white">Agents</h3>
       <article v-for="(cfg, name) in settings.agents" :key="name" class="surface p-4">
         <div class="mb-3 flex items-center gap-3">
-          <AgentOrb :icon="cfg.icon || 'system'" :color="cfg.color || '#94a3b8'" size="sm" />
+          <AgentAvatar :agent="cfg" still />
           <div class="min-w-0 flex-1">
             <p class="text-sm font-semibold text-white">{{ agentLabel(name, settings.agents) }}</p>
             <p class="font-mono text-xs text-slate-400">{{ name }}</p>
@@ -128,6 +137,16 @@
           </div>
         </div>
         <p class="hint">Letters, digits and underscores, starting with a letter. Custom agents run after the code is approved, before testing.</p>
+        <!-- Its look: the same choices as the Looks tab -->
+        <div class="flex flex-wrap items-end gap-3">
+          <JuliMascot :size="72" v-bind="lookOf(draft)" />
+          <div v-for="part in LOOK_PARTS" :key="part.id" class="min-w-[8rem] flex-1">
+            <label :for="`new-${part.id}`" class="label">{{ part.label }}</label>
+            <select :id="`new-${part.id}`" v-model="draft[part.id]" class="field">
+              <option v-for="o in part.options" :key="o.id" :value="o.id">{{ o.name }}</option>
+            </select>
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" :disabled="!draft.name.trim()"><Icon name="plus" class="h-4 w-4" />Add agent</button>
       </form>
     </section>
@@ -135,14 +154,18 @@
 </template>
 
 <script setup>
-// The crew: each agent's role, model and optional output limit; Auto-Crew picks; the mode switch.
+// The crew: each agent's role, model and optional output limit; Auto-Crew picks; the mode switch;
+// and, in its own tab, each agent's look.
 import { ref, reactive, computed, watch } from 'vue'
-import AgentOrb from './AgentOrb.vue'
+import AgentAvatar from './AgentAvatar.vue'
+import CrewLooks from './CrewLooks.vue'
 import Icon from './Icon.vue'
+import JuliMascot from './JuliMascot.vue'
 import ModeSwitch from './ModeSwitch.vue'
 import SidePanel from './SidePanel.vue'
 import { apiFetch } from '../api.js'
 import { agentLabel, ROLES } from '../labels.js'
+import { OUTFITS, ACCESSORIES, IDLES, POSES, lookOf } from '../mascot.js'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -152,6 +175,22 @@ const props = defineProps({
   locked: { type: Boolean, default: false },
 })
 const emit = defineEmits(['close', 'saved', 'mode-changed'])
+
+const TABS = [
+  { id: 'agents', label: 'Agents' },
+  { id: 'looks', label: 'Looks' },
+]
+const tab = ref('agents')
+
+// A new agent's look. "Same as Juli" follows Juli's own.
+const SAME = { id: 'default', name: 'Same as Juli' }
+const LOOK_PARTS = [
+  { id: 'outfit', label: 'Outfit', options: [SAME, ...OUTFITS] },
+  { id: 'accessory', label: 'Accessory', options: [SAME, ...ACCESSORIES] },
+  { id: 'idle', label: 'Idle style', options: [SAME, ...IDLES] },
+  { id: 'pose', label: 'Working pose', options: POSES },
+]
+const NO_LOOK = { outfit: 'default', accessory: 'default', idle: 'default', pose: 'auto' }
 
 const COLORS = ['#6366f1', '#06b6d4', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#f97316', '#3b82f6', '#14b8a6', '#84cc16', '#94a3b8']
 
@@ -208,12 +247,15 @@ async function remove(name) {
   }
 }
 
-const draft = reactive({ name: '', role: 'custom', model: 'ollama:qwen3:8b' })
+const draft = reactive({ name: '', role: 'custom', model: 'ollama:qwen3:8b', ...NO_LOOK })
 async function add() {
   error.value = ''
+  // Only the parts of the look that were chosen; the rest take the API's defaults.
+  const look = Object.fromEntries(Object.keys(NO_LOOK).filter(k => draft[k] !== NO_LOOK[k]).map(k => [k, draft[k]]))
   try {
-    await apiFetch('/api/settings/agents', { method: 'POST', body: { name: draft.name.trim(), role: draft.role, model: draft.model.trim() } })
+    await apiFetch('/api/settings/agents', { method: 'POST', body: { name: draft.name.trim(), role: draft.role, model: draft.model.trim(), ...look } })
     draft.name = ''
+    Object.assign(draft, NO_LOOK)
     emit('saved')
   } catch (e) {
     error.value = e.message

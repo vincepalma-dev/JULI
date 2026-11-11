@@ -1,6 +1,7 @@
 // The small pieces: the live line, the meter, the top bar, the sidebar, the mascot, the orb and icons.
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import AgentAvatar from '../../src/components/AgentAvatar.vue'
 import AgentOrb from '../../src/components/AgentOrb.vue'
 import Icon from '../../src/components/Icon.vue'
 import JuliMascot from '../../src/components/JuliMascot.vue'
@@ -23,6 +24,17 @@ describe('NowWorking', () => {
     vi.advanceTimersByTime(2000)
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('1:07')
+  })
+
+  it("shows the working agent's own Juli, in the pose it was given", () => {
+    const agents = { DevOps: { role: 'custom', color: '#10b981', outfit: 'overalls', pose: 'devops' } }
+    const wrapper = line({ status: 'running', agents, turn: { agent: 'DevOps', role: 'custom', model: 'm', since: Date.now() } })
+    const figure = wrapper.find('.juli-figure')
+    expect(figure.classes()).toContain('juli--devops')
+    expect(figure.attributes('style')).toContain('--juli-accent: #10b981')
+    expect(figure.attributes('style')).toContain('--juli-sleeve: #fde68a') // the overalls
+    // Between runs it is Juli herself again.
+    expect(line({ status: 'idle', agents }).find('.juli-figure').attributes('style')).toContain('--juli-sleeve: #f1f5f9')
   })
 
   it('names a running command instead of the phrase', () => {
@@ -171,11 +183,63 @@ describe('JuliMascot', () => {
     expect(new Set(crew.map(f => /--juli-accent: (#\w+)/.exec(f.attributes('style'))[1])).size).toBe(3)
   })
 
+  it('wears the outfit and accessory she is given, and idles in the given style', () => {
+    const rider = juli({ outfit: 'rider', idle: 'ride', accent: '#ef4444' })
+    const figure = rider.find('.juli-figure')
+    expect(figure.classes()).toContain('juli-idle--ride')
+    expect(figure.attributes('style')).toContain('--juli-accent: #ef4444')
+    expect(figure.attributes('style')).toContain('--juli-sleeve: #4b5563')
+    expect(rider.find('.juli-headlight').exists()).toBe(true) // her motorcycle
+    expect(rider.find('.juli-bun').exists()).toBe(false) // under the helmet
+    expect(rider.find('.juli-fx').exists()).toBe(true) // the road rushing past
+
+    const plain = juli({})
+    expect(plain.find('.juli-figure').classes()).toContain('juli-idle--calm')
+    expect(plain.find('.juli-figure').attributes('style')).toContain('--juli-sleeve: #f1f5f9') // the lab coat
+    expect(plain.find('.juli-bun').exists()).toBe(true)
+    expect(juli({ accessory: 'beanie' }).find('.juli-bun').exists()).toBe(false)
+  })
+
+  it('moves to a second pose in the idle styles that have one', () => {
+    const wave = juli({ idle: 'wave' }).find('.juli-figure')
+    expect(wave.classes()).toContain('juli-move--visit')
+    expect(wave.attributes('style')).toContain('--rs2: -97deg')
+    expect(juli({ idle: 'dance' }).find('.juli-figure').classes()).toContain('juli-move--swap')
+    expect(juli({ idle: 'juggle' }).findAll('.juli-ball-y')).toHaveLength(3)
+    // An idle style only shows while she is idle.
+    expect(juli({ state: 'reviewer', idle: 'wave' }).find('.juli-figure').classes()).not.toContain('juli-idle--wave')
+  })
+
+  it('crops to head and shoulders as a bust, without the floating extras', () => {
+    const bust = juli({ state: 'waiting', bust: true })
+    expect(bust.attributes('viewBox')).toBe('56 12 144 144')
+    expect(bust.find('.juli-fx').exists()).toBe(false)
+    expect(juli({ state: 'waiting' }).attributes('viewBox')).toBe('0 0 256 256')
+  })
+
   it('holds still when asked', () => {
     const still = juli({ state: 'idle', still: true })
     expect(still.classes()).toContain('juli-mascot--still')
     expect(still.find('.juli-figure').classes()).toContain('juli-figure--still')
     expect(juli({ state: 'idle' }).find('.juli-figure').classes()).not.toContain('juli-figure--still')
+  })
+})
+
+describe('AgentAvatar', () => {
+  it("shows a crew member as its own Juli, in the agent's colour", () => {
+    const avatar = mount(AgentAvatar, { props: { agent: { color: '#ef4444', outfit: 'hoodie', idle: 'dance' }, active: true } })
+    const figure = avatar.find('.juli-figure')
+    expect(avatar.find('svg.juli-mascot').attributes('viewBox')).toBe('56 12 144 144')
+    expect(figure.classes()).toContain('juli-idle--dance')
+    expect(figure.attributes('style')).toContain('--juli-accent: #ef4444')
+    expect(figure.attributes('style')).toContain('--juli-sleeve: #a78bfa') // the hoodie
+    expect(avatar.find('.animate-pulse-glow').exists()).toBe(true) // working now
+  })
+
+  it('shows a speaker outside the crew as a plain orb', () => {
+    const avatar = mount(AgentAvatar, { props: { agent: undefined, color: '#94a3b8' } })
+    expect(avatar.find('.juli-mascot').exists()).toBe(false)
+    expect(avatar.find('svg').exists()).toBe(true)
   })
 })
 

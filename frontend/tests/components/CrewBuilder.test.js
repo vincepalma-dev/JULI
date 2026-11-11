@@ -1,7 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import CrewBuilder from '../../src/components/CrewBuilder.vue'
+import { restoreMascot } from '../../src/mascot.js'
 import { sent, serveApi } from '../helpers.js'
+
+// Juli's own look is one shared setting: put it back after each test.
+afterEach(() => {
+  localStorage.clear()
+  restoreMascot()
+})
 
 const settings = {
   mode: 'privacy',
@@ -141,12 +148,76 @@ describe('CrewBuilder agents', () => {
     expect(wrapper.find('#new-name').element.value).toBe('')
   })
 
+  it('adds an agent with the look chosen for it', async () => {
+    const wrapper = open({ 'POST /api/settings/agents': {} })
+    await wrapper.find('#new-name').setValue('Courier')
+    await wrapper.find('#new-outfit').setValue('rider')
+    await wrapper.find('#new-idle').setValue('ride')
+    await wrapper.find('#new-pose').setValue('devops')
+    expect(wrapper.findAll('form').at(-1).find('.juli-figure').classes()).toContain('juli-idle--ride') // the preview
+    await wrapper.findAll('form').at(-1).trigger('submit')
+    await flushPromises()
+    expect(sent('POST', '/api/settings/agents')).toEqual([{ name: 'Courier', role: 'custom', model: 'ollama:qwen3:8b', outfit: 'rider', idle: 'ride', pose: 'devops' }])
+    expect(wrapper.find('#new-outfit').element.value).toBe('default') // ready for the next one
+  })
+
   it('shows why an agent could not be added', async () => {
     const wrapper = open({ 'POST /api/settings/agents': { status: 409, body: { detail: 'That agent exists' } } })
     await wrapper.find('#new-name').setValue('Coder')
     await wrapper.findAll('form').at(-1).trigger('submit')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').text()).toBe('That agent exists')
+  })
+})
+
+describe('CrewBuilder looks', () => {
+  const radio = (wrapper, group, name) => wrapper.find(`[role="radiogroup"][aria-label="${group}"]`).findAll('[role="radio"]').find(r => r.text().startsWith(name))
+  async function looks(routes) {
+    const wrapper = open(routes)
+    await wrapper.findAll('[role="tab"]').find(t => t.text() === 'Looks').trigger('click')
+    return wrapper
+  }
+
+  it("saves an agent's outfit, accessory, idle style and working pose", async () => {
+    const wrapper = await looks({ 'PUT /api/settings/agents': {} })
+    expect(wrapper.find('#model-Coder').exists()).toBe(false) // the Agents tab is away
+    await radio(wrapper, 'Whose look to change', 'Coder').trigger('click')
+    await radio(wrapper, 'Outfit', 'Motorcycle rider').trigger('click')
+    await radio(wrapper, 'Accessory', 'Scarf').trigger('click')
+    await radio(wrapper, 'Idle style', 'Ride').trigger('click')
+    await radio(wrapper, 'Working pose', 'Fixing').trigger('click')
+    await flushPromises()
+    expect(sent('PUT', '/api/settings/agents')).toEqual([
+      { Coder: { outfit: 'rider' } },
+      { Coder: { accessory: 'scarf' } },
+      { Coder: { idle: 'ride' } },
+      { Coder: { pose: 'devops' } },
+    ])
+    expect(wrapper.find('[role="status"]').text()).toBe('Saved')
+  })
+
+  it("shows an agent's saved look, and previews it idle or working", async () => {
+    const dressed = { ...settings, agents: { ...settings.agents, Coder: { ...settings.agents.Coder, outfit: 'hoodie', idle: 'dance', pose: 'analyst' } } }
+    const wrapper = await looks()
+    await wrapper.setProps({ settings: dressed })
+    await radio(wrapper, 'Whose look to change', 'Coder').trigger('click')
+    expect(radio(wrapper, 'Outfit', 'Hoodie').attributes('aria-checked')).toBe('true')
+    expect(radio(wrapper, 'Accessory', 'Same as Juli').attributes('aria-checked')).toBe('true')
+    const preview = () => wrapper.find('svg[width="152"] .juli-figure').classes()
+    expect(preview()).toContain('juli-idle--dance')
+    await wrapper.findAll('button').find(b => b.text() === 'Working').trigger('click')
+    expect(preview()).toContain('juli--analyst')
+  })
+
+  it("keeps Juli's own look in this browser, with no working pose to choose", async () => {
+    const wrapper = await looks()
+    expect(wrapper.find('[role="radiogroup"][aria-label="Working pose"]').exists()).toBe(false)
+    expect(radio(wrapper, 'Outfit', 'Same as Juli')).toBeUndefined()
+    await radio(wrapper, 'Outfit', 'Space suit').trigger('click')
+    await radio(wrapper, 'Idle style', 'Juggle').trigger('click')
+    expect(JSON.parse(localStorage.getItem('juli-mascot'))).toEqual({ outfit: 'space-suit', accessory: 'none', idle: 'juggle' })
+    expect(radio(wrapper, 'Outfit', 'Space suit').attributes('aria-checked')).toBe('true')
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
 

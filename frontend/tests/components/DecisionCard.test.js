@@ -106,3 +106,33 @@ describe('DecisionCard: key problem', () => {
     expect(sent('POST', '/api/task/decision')).toEqual([{ action: 'switch', model: 'ollama:qwen3:8b' }, { action: 'stop' }])
   })
 })
+
+describe('DecisionCard: MCP tool approval', () => {
+  const tool = {
+    key: 'k4',
+    content: 'Coder wants to use search from the MCP server gh (its server runs on this machine, outside the sandbox). Approve or deny it.\n\n{...}',
+    data: { kind: 'tool_approval', agent: 'Coder', tool: 'search', server: 'gh', args: { q: 'bug' }, sandbox: false, reason: 'its server runs on this machine, outside the sandbox' },
+  }
+
+  it('shows the tool, its server and the exact arguments, and allows the call', async () => {
+    serveApi({ 'POST /api/task/decision': null })
+    const wrapper = mount(DecisionCard, { props: { message: tool, open: true } })
+    expect(wrapper.text()).toContain('Coder wants to use a tool')
+    expect(wrapper.find('p.prose-msg').text()).not.toContain('{...}')
+    expect(wrapper.find('pre').text()).toBe('{\n  "q": "bug"\n}')
+    expect(wrapper.text()).toContain('Outside the sandbox')
+    expect(wrapper.text()).toContain('Asks because its server runs on this machine, outside the sandbox.')
+    await button(wrapper, 'Allow this call').trigger('click')
+    await flushPromises()
+    expect(sent('POST', '/api/task/decision')).toEqual([{ action: 'approve' }])
+  })
+
+  it('denies it, and says when the server is sandboxed', async () => {
+    serveApi({ 'POST /api/task/decision': null })
+    const wrapper = mount(DecisionCard, { props: { message: { ...tool, data: { ...tool.data, sandbox: true } }, open: true } })
+    expect(wrapper.text()).toContain('Docker sandbox, no network')
+    await button(wrapper, 'Deny').trigger('click')
+    await flushPromises()
+    expect(sent('POST', '/api/task/decision')).toEqual([{ action: 'deny' }])
+  })
+})

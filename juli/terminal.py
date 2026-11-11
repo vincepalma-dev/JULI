@@ -91,10 +91,13 @@ class CommandResult:
     seconds: float = 0.0
 
 
-def docker_argv(base: Path, command: str, cfg: dict, name: str, *, direct: bool) -> list[str]:
+def docker_argv(
+    base: Path, command: str, cfg: dict, name: str, *, direct: bool, interactive: bool = False, env: list[str] | tuple[str, ...] = ()
+) -> list[str]:
     """`docker run` for a command: the workspace is the only mount (its .git
-    read-only, or hidden if there's none), no network, no host variables. A
-    missing image fails instead of being downloaded."""
+    read-only, or hidden if there's none), no network, no host variables
+    except the ones named in `env`. A missing image fails instead of being
+    downloaded. `interactive` keeps stdin open (MCP servers speak over it)."""
     if "," in str(base):
         raise ValueError("The workspace path can't contain a comma for the Docker sandbox")
     git_dir = base / ".git"
@@ -115,6 +118,10 @@ def docker_argv(base: Path, command: str, cfg: dict, name: str, *, direct: bool)
         "--mount", git_mount,
         "-w", "/workspace",
     ]  # fmt: skip
+    if interactive:
+        argv.insert(3, "-i")
+    for var in env:
+        argv += ["-e", var]
     if sys.platform != "win32":  # files it creates belong to the user, not root
         argv += ["--user", f"{os.getuid()}:{os.getgid()}"]
     argv.append(cfg["image"])
@@ -140,7 +147,7 @@ def run_command(
     if sandboxed:
         name = f"juli-cmd-{uuid.uuid4().hex[:12]}"
         argv = docker_argv(base, command, cfg, name, direct=direct)
-        kill = functools.partial(_stop_container, name)
+        kill = functools.partial(stop_container, name)
     else:
         # The user approved this exact text as a shell command.
         argv = command if os.name == "nt" else ["/bin/sh", "-c", command]
@@ -197,7 +204,7 @@ def _kill_tree(proc: Any) -> None:
         pass
 
 
-def _stop_container(name: str, proc: Any) -> None:
+def stop_container(name: str, proc: Any) -> None:
     # Killing the docker client doesn't stop the container; kill it by name.
     execute(["docker", "kill", name], cwd=None, env=safe_env(), timeout=DOCKER_CHECK_TIMEOUT)
     try:

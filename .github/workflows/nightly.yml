@@ -69,5 +69,23 @@ jobs:
           juli run "Write a Python function add(a, b) that returns the sum, with one pytest test." --plan --discuss 0 -o "$RUNNER_TEMP/out"
           ls -l "$RUNNER_TEMP/out"
 
+      # The reviewer gets read-only tools; a small model may still answer without
+      # calling one, so that is a warning, while a failed run fails the job.
+      - name: A tool-calling run on the real model
+        run: |
+          juli run "Read README.md with the read_file tool, then review it in two sentences." --review -o "$RUNNER_TEMP/out"
+          python - <<'EOF'
+          import sqlite3
+          from juli import config
+
+          with sqlite3.connect(config.db_path()) as db:
+              (run_id, status), = db.execute("SELECT id, status FROM runs ORDER BY id DESC LIMIT 1")
+              tools = db.execute("SELECT content FROM messages WHERE run_id = ? AND message_type = 'tool'", (run_id,)).fetchall()
+          print(f"Run {run_id}: {status}, {len(tools)} tool call(s): {[t[0] for t in tools]}")
+          assert status == "complete", status
+          if not tools:
+              print("::warning::The model answered without calling a tool")
+          EOF
+
       - if: failure()
         run: tail -n 100 "$RUNNER_TEMP/ollama.log"

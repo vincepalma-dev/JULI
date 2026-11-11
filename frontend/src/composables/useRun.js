@@ -2,7 +2,7 @@ import { ref, reactive, computed } from 'vue'
 import { apiFetch } from '../api.js'
 
 // Message types that drive state but aren't shown as timeline entries.
-const NOT_IN_TIMELINE = new Set(['status', 'turn_start', 'command_start'])
+const NOT_IN_TIMELINE = new Set(['status', 'turn_start', 'command_start', 'tool_start'])
 const ENDED = new Set(['complete', 'stopped', 'error', 'idle'])
 const MAX_COMMANDS = 30
 const MAX_OUTPUT_CHARS = 200_000
@@ -17,6 +17,7 @@ const TOAST_WINDOW_MS = 30_000
  * - status messages carry data.status; turn_start drives the "now working" line
  * - chunks build the streaming draft until the agent's final message lands
  * - command_start / command_output / command feed the terminal's Agent tab
+ * - tool_start / tool do too, and a finished tool call is a timeline entry
  */
 export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
   const status = ref('idle') // idle, running, paused, complete, stopped, error
@@ -24,16 +25,19 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
   const runs = ref([])
   const messages = ref([])
   const draft = ref(null) // { agent, model, text, run_id }
-  const turn = ref(null) // { agent, role, activity, model, since, command }
+  const turn = ref(null) // { agent, role, activity, model, since, command, tool }
   const asking = ref(null) // { agent, run_id }: a follow-up question waiting for its answer
-  const commands = ref([]) // the Agent tab: { key, agent, command, sandbox, output, status, exit_code, seconds }
+  // The Agent tab: commands { key, agent, command, sandbox, output, status, exit_code, seconds },
+  // and tool calls, which also have kind 'tool', call_id and server.
+  const commands = ref([])
   const pulls = reactive({}) // model -> latest pull_progress data
   const answered = reactive({}) // decision key -> the action the user chose
   const lastSpeed = ref(null) // { model, tokPerSec } of the latest finished turn
   const seen = new Set()
   let commandsProject = null // the project the Agent tab's commands belong to
 
-  const keyOf = m => `${m.run_id ?? ''}|${m.timestamp}|${m.message_type}|${m.agent_name}`
+  // Tool calls also carry their call id: one agent can start two in the same clock tick.
+  const keyOf = m => `${m.run_id ?? ''}|${m.timestamp}|${m.message_type}|${m.agent_name}${m.data?.call_id != null ? `|${m.data.call_id}` : ''}`
 
   function add(m) {
     const key = keyOf(m)
@@ -79,6 +83,7 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
           model: m.model,
           since: Date.parse(m.timestamp) || Date.now(),
           command: null,
+          tool: null,
         }
         draft.value = { agent: m.agent_name, model: m.model, text: '', run_id: m.run_id }
         return
@@ -90,11 +95,10 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
         return
       case 'command_start':
         if (!add(m)) return
-        commands.value.push({
+        pushEntry({
           key: keyOf(m), agent: m.agent_name, command: m.data?.command ?? m.content,
           sandbox: Boolean(m.data?.sandbox), output: '', status: 'running', exit_code: null, seconds: null,
         })
-        if (commands.value.length > MAX_COMMANDS) commands.value.shift()
         if (turn.value) turn.value.command = m.data?.command ?? m.content
         return
       case 'command_output': {
@@ -113,6 +117,23 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
           recordCommand(m)
         }
         if (turn.value) turn.value.command = null
+        return
+      }
+      case 'tool_start':
+        if (!add(m)) return
+        pushEntry({
+          key: keyOf(m), kind: 'tool', agent: m.agent_name, command: m.content, call_id: m.data?.call_id,
+          server: null, sandbox: null, output: '', status: 'running', exit_code: null, seconds: null,
+        })
+        if (turn.value) turn.value.tool = m.content
+        return
+      case 'tool': {
+        if (!add(m)) return
+        const d = m.data || {}
+        const entry = d.call_id == null ? null : commands.value.find(c => c.kind === 'tool' && c.status === 'running' && c.call_id === d.call_id)
+        if (entry) Object.assign(entry, { status: d.status, output: d.output || '', seconds: d.seconds, server: d.server })
+        else recordTool(m)
+        if (turn.value) turn.value.tool = null
         return
       }
       case 'pull_progress':
@@ -136,20 +157,33 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
     }
   }
 
+  function pushEntry(entry) {
+    commands.value.push(entry)
+    if (commands.value.length > MAX_COMMANDS) commands.value.shift()
+  }
+
   /** A finished command (its result message) as an Agent tab entry. */
   function recordCommand(m) {
     const d = m.data || {}
-    commands.value.push({
+    pushEntry({
       key: keyOf(m), agent: m.agent_name, command: d.command, sandbox: Boolean(d.sandbox),
       output: d.output || '', status: d.status, exit_code: d.exit_code, seconds: d.seconds,
     })
-    if (commands.value.length > MAX_COMMANDS) commands.value.shift()
+  }
+
+  /** A finished tool call (its result message) as an Agent tab entry. */
+  function recordTool(m) {
+    const d = m.data || {}
+    pushEntry({
+      key: keyOf(m), kind: 'tool', agent: m.agent_name, command: m.content, call_id: d.call_id, server: d.server,
+      sandbox: null, output: d.output || '', status: d.status, exit_code: null, seconds: d.seconds,
+    })
   }
 
   function findRunning(command) {
     for (let i = commands.value.length - 1; i >= 0; i--) {
       const c = commands.value[i]
-      if (c.status === 'running' && (command == null || c.command === command)) return c
+      if (c.kind !== 'tool' && c.status === 'running' && (command == null || c.command === command)) return c
     }
     return null
   }
@@ -169,7 +203,9 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
     commandsProject = projectId
     const rebuild = commands.value.length === 0
     for (const m of project.messages || []) {
-      if (add(m) && rebuild && m.message_type === 'command') recordCommand(m)
+      if (!add(m) || !rebuild) continue
+      if (m.message_type === 'command') recordCommand(m)
+      else if (m.message_type === 'tool') recordTool(m)
     }
     // The live view may be ahead of the store (a run in progress here).
     if (rows.some(r => r.id === activeRunId.value)) for (const m of live) add(m)
@@ -237,11 +273,13 @@ export function useRun({ onWarning = () => {}, onEnded = () => {} } = {}) {
     return null
   })
 
-  /** Runs in order, each with its timeline entries. Messages from before runs existed come first. */
+  /** Runs in order, each with its timeline entries. Messages from before runs existed come first.
+   * A reply that only called tools has no text: its tokens count, but it isn't shown. */
   const timeline = computed(() => {
     const groups = new Map(runs.value.map(r => [r.id, { run: r, items: [] }]))
     const loose = []
     for (const m of messages.value) {
+      if (m.message_type === 'agent' && !String(m.content || '').trim()) continue
       if (m.run_id == null) {
         loose.push(m)
         continue

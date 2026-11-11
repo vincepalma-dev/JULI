@@ -33,6 +33,8 @@ DEFAULT_RUN: dict[str, Any] = {
     "fallback_model": None,
     "discussion_rounds": 0,  # crew discussion of the plan; 0 is off
     "allowances": {},
+    "max_tool_rounds": 25,  # tool rounds per agent turn; an agent's own setting overrides it
+    "max_handoffs": 12,  # handoffs per run; 0 turns them off
 }
 
 # The Docker sandbox for agent commands. Off by default: every command then

@@ -134,7 +134,7 @@ const relayAnswer = (key, action) => emit('answered', key, action)
 
 // The crew's working steps, plus questions already answered; everything else
 // (your notes, an open question, warnings, errors, follow-ups) stays in view.
-const CREW_WORK = new Set(['agent', 'files', 'command', 'system'])
+const CREW_WORK = new Set(['agent', 'files', 'command', 'tool', 'system'])
 const isWork = m => CREW_WORK.has(m.message_type) || (m.message_type === 'decision' && m.key !== props.openDecisionKey)
 const live = computed(() => props.status === 'running' || props.status === 'paused')
 

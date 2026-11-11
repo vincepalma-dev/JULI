@@ -74,9 +74,9 @@ describe('useRun timeline and totals', () => {
   it('groups messages by run in order, with messages from before runs first', () => {
     const run = useRun()
     run.started(2, 'second', 'full')
-    run.ingest(msg('agent', { run_id: 2 }))
-    run.ingest(msg('agent', { run_id: 1 })) // a run the list doesn't know yet
-    run.ingest(msg('agent', { run_id: null, agent_name: 'Planner' }))
+    run.ingest(msg('agent', { run_id: 2, content: 'b' }))
+    run.ingest(msg('agent', { run_id: 1, content: 'a' })) // a run the list doesn't know yet
+    run.ingest(msg('agent', { run_id: null, agent_name: 'Planner', content: 'p' }))
     const groups = run.timeline.value
     expect(groups.map(g => g.run?.id ?? null)).toEqual([null, 1, 2])
     expect(groups.map(g => g.items.length)).toEqual([1, 1, 1])
@@ -179,5 +179,76 @@ describe('useRun follow-ups and refresh', () => {
     run.ingest(msg('command', { content: '$ pytest -q', data: { command: 'pytest -q', status: 'passed', exit_code: 0, seconds: 1 } }))
     expect(run.commands.value).toMatchObject([{ command: 'pytest -q', sandbox: true, output: '1 passed\n', status: 'passed', exit_code: 0 }])
     expect(run.turn.value.command).toBeNull()
+  })
+})
+
+describe('useRun tool calls', () => {
+  const start = (fields = {}) => msg('tool_start', { content: 'read_file app.py', data: { tool: 'read_file', call_id: 'c1', args: { path: 'app.py' } }, ...fields })
+  const done = (fields = {}) => msg('tool', {
+    content: 'read_file app.py',
+    data: { tool: 'read_file', call_id: 'c1', args: { path: 'app.py' }, status: 'ok', output: 'def add', seconds: 0.1, server: null },
+    ...fields,
+  })
+
+  it('shows a running tool in the live line and the Agent tab, then settles it in the timeline', () => {
+    const run = useRun()
+    run.ingest(msg('turn_start', { data: { role: 'coder', activity: 'coding' } }))
+    run.ingest(start())
+    expect(run.turn.value.tool).toBe('read_file app.py')
+    expect(run.commands.value).toMatchObject([{ kind: 'tool', command: 'read_file app.py', status: 'running', agent: 'Coder' }])
+    expect(run.messages.value.some(m => m.message_type === 'tool_start')).toBe(false)
+
+    run.ingest(done())
+    expect(run.turn.value.tool).toBe(null)
+    expect(run.commands.value).toMatchObject([{ kind: 'tool', status: 'ok', output: 'def add', seconds: 0.1 }])
+    expect(run.messages.value.filter(m => m.message_type === 'tool')).toHaveLength(1)
+  })
+
+  it("keeps a tool's result apart from a command with the same text", () => {
+    const run = useRun()
+    run.ingest(msg('command_start', { content: 'pytest', data: { command: 'pytest' } }))
+    run.ingest(start({ content: 'pytest' }))
+    run.ingest(msg('command', { content: '$ pytest', data: { command: 'pytest', status: 'passed', exit_code: 0 } }))
+    expect(run.commands.value.map(c => [c.kind ?? 'command', c.status])).toEqual([['command', 'passed'], ['tool', 'running']])
+  })
+
+  it('keeps two tool calls by one agent in the same instant, and settles each by its call id', () => {
+    const run = useRun()
+    const ts = '2026-11-10T09:00:00.000000+00:00'
+    run.ingest(start({ timestamp: ts }))
+    run.ingest(start({ timestamp: ts, content: 'list_files', data: { tool: 'list_files', call_id: 'c2', args: {} } }))
+    run.ingest(done({ timestamp: ts, data: { tool: 'list_files', call_id: 'c2', status: 'ok', output: 'a.py' } }))
+    run.ingest(done({ timestamp: ts }))
+    expect(run.commands.value.map(c => [c.command, c.status])).toEqual([['read_file app.py', 'ok'], ['list_files', 'ok']])
+    expect(run.messages.value.filter(m => m.message_type === 'tool')).toHaveLength(2)
+  })
+
+  it("doesn't settle a running tool with a result that has no call id", () => {
+    const run = useRun()
+    run.ingest(start({ data: { tool: 'read_file', call_id: undefined } }))
+    run.ingest(done({ data: { tool: 'read_file', status: 'ok', output: 'x' } }))
+    expect(run.commands.value.map(c => c.status)).toEqual(['running', 'ok'])
+  })
+
+  it('records a finished tool it never saw start', () => {
+    const run = useRun()
+    run.ingest(done({ data: { tool: 'mcp__gh__search', call_id: 'x', status: 'error', output: 'boom', server: 'gh' } }))
+    expect(run.commands.value).toMatchObject([{ kind: 'tool', status: 'error', server: 'gh', output: 'boom' }])
+  })
+
+  it('hides a reply that only called tools, but counts its tokens', () => {
+    const run = useRun()
+    run.started(1, 'task', 'code')
+    run.ingest(msg('agent', { content: '  ', tokens_in: 10, tokens_out: 2 }))
+    run.ingest(msg('agent', { content: 'Done.', tokens_in: 5, tokens_out: 1 }))
+    expect(run.timeline.value[0].items.map(m => m.content)).toEqual(['Done.'])
+    expect(run.totals(1).tokens_in).toBe(15)
+  })
+
+  it("rebuilds the Agent tab from a project's stored tool calls", async () => {
+    serve([done({ run_id: 3 })], [{ id: 3, prompt: 'p', status: 'complete' }])
+    const run = useRun()
+    await run.loadProject('p1')
+    expect(run.commands.value).toMatchObject([{ kind: 'tool', command: 'read_file app.py', status: 'ok' }])
   })
 })

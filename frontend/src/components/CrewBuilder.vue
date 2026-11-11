@@ -83,8 +83,13 @@
         </div>
 
         <details class="mt-3">
-          <summary class="cursor-pointer text-xs font-medium text-slate-400 hover:text-slate-200">Title, colour and prompt</summary>
+          <summary class="cursor-pointer text-xs font-medium text-slate-400 hover:text-slate-200">Title, colour, prompt and tool rounds</summary>
           <div class="mt-3 space-y-3">
+            <div>
+              <label :for="`rounds-${name}`" class="label">Tool rounds per turn</label>
+              <input :id="`rounds-${name}`" :value="shown(name, 'max_tool_rounds')" type="number" min="1" max="100" inputmode="numeric" class="field sm:w-40" placeholder="Run setting" @input="type(name, 'max_tool_rounds', $event)" @change="saveRounds(name, $event.target.value)" />
+              <p class="hint mt-1">How many times this agent may use tools before it must answer. Empty uses the run setting.</p>
+            </div>
             <div>
               <label :for="`title-${name}`" class="label">Job title</label>
               <input :id="`title-${name}`" :value="shown(name, 'job_title')" maxlength="80" class="field" placeholder="e.g. Lead DB Admin" @input="type(name, 'job_title', $event)" @change="save(name, { job_title: $event.target.value.trim() })" />
@@ -180,6 +185,17 @@ async function save(name, patch) {
   } catch (e) {
     status[name] = { ok: false, text: e.message }
   }
+}
+
+// Empty uses the run setting; anything else must be a whole number the API takes.
+function saveRounds(name, value) {
+  if (value === '') return save(name, { max_tool_rounds: null })
+  const rounds = Number(value)
+  if (!Number.isInteger(rounds) || rounds < 1 || rounds > 100) {
+    status[name] = { ok: false, text: 'Tool rounds must be a whole number from 1 to 100' }
+    return
+  }
+  return save(name, { max_tool_rounds: rounds })
 }
 
 async function remove(name) {

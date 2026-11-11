@@ -4,6 +4,11 @@ GET /v1/models, streamed POST /v1/chat/completions with a final usage chunk.
 The reply is chosen by the system prompt's first line. Model "fake-slow"
 streams one word every 0.3 s (for Stop). max_tokens cuts the reply to that
 many words.
+
+Tool calls: when a request offers tools and nothing has been called yet in
+the conversation, the Reviewer first reads calc.py, and the Tester first
+calls an MCP tool if one is offered. The next request (with the results)
+gets the usual reply.
 """
 
 import json
@@ -22,6 +27,21 @@ REPLIES = {
     "Test": f"Tests:\n{FENCE}python path=test_calc.py\nfrom calc import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n{FENCE}\n",
     "Documentation": f"{FENCE}markdown path=README.md\n# Calc\n\nadd(a, b) returns the sum.\n{FENCE}\n",
 }
+
+
+def tool_call_for(body: dict) -> dict | None:
+    """The tool call to make first, if any: {"name", "arguments"}."""
+    offered = [t["function"]["name"] for t in body.get("tools") or []]
+    if not offered or any(m["role"] == "tool" for m in body["messages"]):
+        return None
+    system = next((m["content"] for m in body["messages"] if m["role"] == "system"), "")
+    first = system.splitlines()[0] if system else ""
+    if "Reviewer" in first and "read_file" in offered:
+        return {"name": "read_file", "arguments": json.dumps({"path": "calc.py"})}
+    mcp = next((name for name in offered if name.startswith("mcp__")), None)
+    if "Test" in first and mcp:
+        return {"name": mcp, "arguments": json.dumps({"text": "from the tester"})}
+    return None
 
 
 def reply_for(body: dict) -> str:
@@ -57,7 +77,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "Content-Length is required"}, 400)
             return
         body = json.loads(self.rfile.read(int(length)))
-        text = reply_for(body)
+        call = tool_call_for(body)
+        text = "" if call else reply_for(body)
         delay = 0.3 if body.get("model") == "fake-slow" else 0.0
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -70,7 +91,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
                 self.wfile.flush()
                 time.sleep(delay)
-            done = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+            if call:
+                delta = {"tool_calls": [{"index": 0, "id": "call_1", "type": "function", "function": call}]}
+                chunk = {**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+                self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+            done = {**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls" if call else "stop"}]}
             usage = {
                 **base,
                 "choices": [],

@@ -30,6 +30,11 @@ describe('NowWorking', () => {
     expect(wrapper.text()).toContain('Running python -m pytest…')
   })
 
+  it('names a running tool call', () => {
+    const wrapper = line({ status: 'running', turn: { agent: 'Coder', role: 'coder', model: 'm', since: Date.now(), tool: 'read_file src/app.py' } })
+    expect(wrapper.text()).toContain('Reading src/app.py…')
+  })
+
   it.each([
     [{ status: 'running' }, 'Starting the crew…'],
     [{ status: 'paused' }, 'Waiting for you'],

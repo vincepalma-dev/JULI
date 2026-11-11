@@ -10,10 +10,11 @@
 
 <script setup>
 // The live line at the bottom of the run: Juli plus what the crew is doing.
-// Driven by turn_start (who and what), the run status, and follow-up questions.
+// Driven by turn_start (who and what), tool and command starts, the run status,
+// and follow-up questions.
 import { ref, computed, onUnmounted, watch } from 'vue'
 import JuliMascot from './JuliMascot.vue'
-import { agentLabel, workingPhrase, turnMascot, splitRef } from '../labels.js'
+import { agentLabel, workingPhrase, turnMascot, splitRef, toolPhrase } from '../labels.js'
 
 const props = defineProps({
   status: { type: String, default: 'idle' },
@@ -46,7 +47,8 @@ const view = computed(() => {
       if (!turn) return { mascot: 'idle', text: 'Starting the crew…', tone: 'text-slate-100' }
       return {
         mascot: turnMascot(turn, props.streaming),
-        text: turn.command ? `Running ${turn.command.split(/\s+/).slice(0, 3).join(' ')}…` : workingPhrase(turn, props.agents),
+        text: turn.command ? `Running ${turn.command.split(/\s+/).slice(0, 3).join(' ')}…`
+          : turn.tool ? toolPhrase(turn.tool) : workingPhrase(turn, props.agents),
         meta: `${agentLabel(turn.agent, props.agents)} · ${splitRef(turn.model).model || turn.model || ''} · ${elapsed(turn.since)}`,
         tone: 'text-slate-100',
       }

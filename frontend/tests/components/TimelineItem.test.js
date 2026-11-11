@@ -66,3 +66,28 @@ describe('TimelineItem', () => {
     expect(item(m, { answered: { k: 'approve' } }).text()).toContain('Approved')
   })
 })
+
+describe('TimelineItem tool calls', () => {
+  it('shows a tool call compactly, with its result inside', () => {
+    const wrapper = item({
+      message_type: 'tool', agent_name: 'SecurityAuditor', content: 'read_file app.py',
+      data: { tool: 'read_file', status: 'ok', output: 'def add(a, b):', seconds: 0.25, server: null },
+    })
+    expect(wrapper.find('summary').text()).toContain('Auditor')
+    expect(wrapper.find('summary').text()).toContain('read_file app.py')
+    expect(wrapper.find('.badge').text()).toBe('done · 0.3 s')
+    expect(wrapper.find('pre').text()).toBe('def add(a, b):')
+  })
+
+  it("names an MCP tool's server and shows a denial", () => {
+    const wrapper = item({ message_type: 'tool', agent_name: 'X', content: 'mcp__gh__search', data: { tool: 'mcp__gh__search', status: 'denied', output: '', server: 'gh' } })
+    expect(wrapper.text()).toContain('MCP · gh')
+    expect(wrapper.find('.badge').text()).toBe('denied')
+    expect(wrapper.find('pre').text()).toBe('No output.')
+  })
+
+  it('marks a failed tool call', () => {
+    const wrapper = item({ message_type: 'tool', agent_name: 'X', content: 'search_files x', data: { tool: 'search_files', status: 'error' } })
+    expect(wrapper.find('.badge').classes()).toContain('text-red-300')
+  })
+})

@@ -27,7 +27,8 @@ def speak(text: str, agent_name: str = "System") -> None:
         try:
             _speak_with_engine(text, engine, agent_name)
             return
-        except (ImportError, OSError, RuntimeError, subprocess.SubprocessError):
+        # pyttsx3's eSpeak driver raises ValueError when it finds no voice.
+        except (ImportError, OSError, RuntimeError, ValueError, subprocess.SubprocessError):
             continue  # not installed or failed: try the next engine
     print("Text-to-speech unavailable. Install pyttsx3: pip install pyttsx3")
 

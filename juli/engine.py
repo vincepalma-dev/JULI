@@ -567,6 +567,13 @@ class Run:
                 f"image:{command.split()[0]}",
                 f"'{command.split()[0]}' isn't in the sandbox image {self.sandbox['image']}. Pick an image that has it.",
             )
+        elif result.status == "error" and result.sandbox and "No such image" in result.output:
+            image = self.sandbox["image"]
+            self._warn(
+                f"no-image:{image}",
+                f"The sandbox image {image} isn't on this machine, and JULI doesn't download images. "
+                f"Run `docker pull {image}`, or pick an image you have in Settings > Sandbox.",
+            )
         return self._log_command(result)
 
     def _log_command(self, result: terminal.CommandResult) -> terminal.CommandResult:

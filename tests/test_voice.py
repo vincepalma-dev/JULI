@@ -42,3 +42,17 @@ def test_failed_system_engine_reports_unavailable(monkeypatch, capsys):
     monkeypatch.setattr(subprocess, "run", fail)
     voice.speak("hello")
     assert "Text-to-speech unavailable" in capsys.readouterr().out
+
+
+def test_a_pyttsx3_voice_error_falls_back_to_the_system_engine(monkeypatch):
+    class NoVoice:
+        @staticmethod
+        def init():
+            raise ValueError("SetVoiceByName failed: voice not found")  # eSpeak with no voices
+
+    calls = []
+    monkeypatch.setitem(voice.sys.modules, "pyttsx3", NoVoice)
+    monkeypatch.setattr(voice.sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: calls.append(args))
+    voice.speak("hello")
+    assert calls == [["espeak", "--stdin"]]

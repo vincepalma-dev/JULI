@@ -29,10 +29,7 @@ MODES = ("privacy", "hybrid", "cloud")
 
 
 def _rate(hw: dict, installed: set[str]) -> list[dict]:
-    return [
-        {"entry": m, "installed": m["tag"] in installed, "fit": hardware.fit(m, hw, m["tag"] in installed)}
-        for m in catalogue.MODELS
-    ]
+    return [{"entry": m, "installed": m["tag"] in installed, "fit": hardware.fit(m, hw, m["tag"] in installed)} for m in catalogue.MODELS]
 
 
 def _best(rated: list[dict], role: str) -> dict | None:

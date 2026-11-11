@@ -73,8 +73,15 @@ def test_settings_api_shows_presets_and_run_settings(client):
 
 
 def test_run_settings_roundtrip(client):
-    run = {"budget_usd": 2.5, "token_cap": 50000, "privacy_mode": True, "auto_fallback": True,
-           "fallback_model": "ollama:qwen3:8b", "discussion_rounds": 2, "allowances": {"openai": 20}}
+    run = {
+        "budget_usd": 2.5,
+        "token_cap": 50000,
+        "privacy_mode": True,
+        "auto_fallback": True,
+        "fallback_model": "ollama:qwen3:8b",
+        "discussion_rounds": 2,
+        "allowances": {"openai": 20},
+    }
     assert client.put("/api/settings/run", json=run, headers=AUTH).status_code == 200
     assert client.get("/api/settings", headers=AUTH).json()["run"] == {**run, "allowances": {"openai": 20.0}}
     # Empty means no limit again.

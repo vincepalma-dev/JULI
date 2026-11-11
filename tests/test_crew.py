@@ -179,7 +179,11 @@ def test_hybrid_needs_a_cloud_model_for_local_planners(client, laptop):
 
 
 def test_hybrid_keeps_cloud_models_the_user_chose(client, laptop):
-    client.put("/api/settings/agents", json={"PlannerResearcher": {"model": "openai:gpt-6.1-sol"}, "ReviewerSecurity": {"model": SONNET}}, headers=AUTH)
+    client.put(
+        "/api/settings/agents",
+        json={"PlannerResearcher": {"model": "openai:gpt-6.1-sol"}, "ReviewerSecurity": {"model": SONNET}},
+        headers=AUTH,
+    )
     body = client.put("/api/settings/mode", json={"mode": "hybrid"}, headers=AUTH).json()
     assert body["changed"] == {}
     assert "openai" in body["notice"] and "anthropic" in body["notice"]

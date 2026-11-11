@@ -115,11 +115,7 @@ def _gpu(r: Readings) -> dict | None:
         gpu = largest(parse_rocm_smi(r.rocm_smi), "amd")
         if gpu:
             return gpu
-    discrete = [
-        (name, size, vendor)
-        for name, size in r.windows_gpus
-        if size and size >= MIN_DISCRETE_VRAM and (vendor := _vendor(name))
-    ]
+    discrete = [(name, size, vendor) for name, size in r.windows_gpus if size and size >= MIN_DISCRETE_VRAM and (vendor := _vendor(name))]
     if discrete:
         name, size, vendor = max(discrete, key=lambda g: g[1])
         return {"vendor": vendor, "name": name, "vram_gb": round(size / GB, 2), "unified": False}

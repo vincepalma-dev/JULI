@@ -107,9 +107,7 @@ COMMANDS = (
 PROTOCOL = {
     "coder": f"{FILES} {COMMANDS}",
     "tester": f"{FILES} {COMMANDS}",
-    "fix": (
-        "A command failed. Fix the code so it passes, and give only the files you change. " + FILES
-    ),
+    "fix": ("A command failed. Fix the code so it passes, and give only the files you change. " + FILES),
     "reviewer": (
         "End your reply with exactly one final line: `VERDICT: APPROVED` if the code is ready, "
         "or `VERDICT: CHANGES REQUESTED` if it needs another pass."

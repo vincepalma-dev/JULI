@@ -64,7 +64,9 @@ def test_apple_silicon_uses_unified_memory():
 
 
 def test_amd_on_linux_via_rocm_smi():
-    rocm = json.dumps({"card0": {"Card Series": "Radeon RX 7900 XTX", "VRAM Total Memory (B)": "25753026560", "VRAM Total Used Memory (B)": "1000"}})
+    rocm = json.dumps(
+        {"card0": {"Card Series": "Radeon RX 7900 XTX", "VRAM Total Memory (B)": "25753026560", "VRAM Total Used Memory (B)": "1000"}}
+    )
     hw = hardware.detect(readings(system="Linux", machine="x86_64", rocm_smi=rocm, windows_gpus=[]))
     assert hw["gpu"]["name"] == "Radeon RX 7900 XTX"
     assert hw["gpu"]["vram_gb"] == pytest.approx(25.75, abs=0.01)

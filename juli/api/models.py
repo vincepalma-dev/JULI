@@ -112,7 +112,9 @@ class ResumeRequest(Strict):
 
 
 # A Docker image reference, e.g. python:3.12-slim or ghcr.io/owner/image:tag.
-DockerImage = Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._/-]{0,199}(?::[A-Za-z0-9_.-]{1,128})?(?:@sha256:[a-f0-9]{64})?$")]
+DockerImage = Annotated[
+    str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9._/-]{0,199}(?::[A-Za-z0-9_.-]{1,128})?(?:@sha256:[a-f0-9]{64})?$")
+]
 
 
 class SandboxSettings(Strict):

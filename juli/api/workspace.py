@@ -82,9 +82,7 @@ def get_zip(project_id: str) -> Response:
 def run_files(run_id: int) -> list[dict]:
     """The files a run wrote, each added or modified."""
     _require_run(run_id)
-    return [
-        {"path": f["path"], "status": "added" if f["before_text"] is None else "modified"} for f in store.run_files(run_id)
-    ]
+    return [{"path": f["path"], "status": "added" if f["before_text"] is None else "modified"} for f in store.run_files(run_id)]
 
 
 @router.get("/runs/{run_id}/diff")

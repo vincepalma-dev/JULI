@@ -481,9 +481,13 @@ def test_discussion_revises_until_the_crew_agrees(models, bus):
     assert result.status == "complete"
     assert models.refs == [
         "ollama:plan",  # plan
-        "ollama:code", "ollama:review", "ollama:plan",  # round 1: feedback, then revise
-        "ollama:code", "ollama:review",  # round 2: all agree
-        "ollama:code", "ollama:review",  # code and review as usual
+        "ollama:code",
+        "ollama:review",
+        "ollama:plan",  # round 1: feedback, then revise
+        "ollama:code",
+        "ollama:review",  # round 2: all agree
+        "ollama:code",
+        "ollama:review",  # code and review as usual
     ]
     discuss_call = models.calls[1]
     assert "PLAN: AGREED" in discuss_call[1][0]["content"] and "path=" not in discuss_call[1][0]["content"]
@@ -520,7 +524,9 @@ def test_message_route_reaches_the_running_task(client, models):
     models.on_chunk = lambda: time.sleep(0.02)
     models.replies["ollama:code"] = " ".join(["slow"] * 100)
     pid = client.post("/api/projects", json={"name": "P"}, headers=AUTH).json()["id"]
-    client.put("/api/settings/agents", json={k: {"model": v["model"], "role": v.get("role", "custom")} for k, v in CREW.items()}, headers=AUTH)
+    client.put(
+        "/api/settings/agents", json={k: {"model": v["model"], "role": v.get("role", "custom")} for k, v in CREW.items()}, headers=AUTH
+    )
     assert client.post("/api/task/message", json={"content": "hi"}, headers=AUTH).status_code == 409
     assert client.post("/api/task", json={"prompt": "x", "project_id": pid, "mode": "plan"}, headers=AUTH).status_code == 202
     wait_for(lambda: engine._active is not None)
@@ -602,9 +608,7 @@ def test_turn_start_comes_before_each_turns_text(models, bus):
 
 
 def test_turn_start_names_discussion_and_revision(models, bus):
-    models.replies.update(
-        {"ollama:code": ["PLAN: CHANGES NEEDED", "code"], "ollama:review": ["PLAN: AGREED", APPROVED]}
-    )
+    models.replies.update({"ollama:code": ["PLAN: CHANGES NEEDED", "code"], "ollama:review": ["PLAN: AGREED", APPROVED]})
     make_run(bus, mode="code", discussion_rounds=1).execute()
     activities = [m.data["activity"] for m in of_type(bus, "turn_start")]
     assert activities[:4] == ["planning", "discussing the plan", "discussing the plan", "revising the plan"]

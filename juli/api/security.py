@@ -15,9 +15,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
-DEFAULT_ALLOWED_ORIGINS = [
-    f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in (3000, 8000)
-]
+DEFAULT_ALLOWED_ORIGINS = [f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in (3000, 8000)]
 
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
 

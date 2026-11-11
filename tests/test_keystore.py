@@ -117,9 +117,7 @@ def test_legacy_left_alone_without_keychain(no_keychain):
 
 
 def test_keys_in_new_settings_file_are_removed(memory_keyring):
-    config.settings_path().write_text(
-        json.dumps({"agents": {}, "api_keys": {"anthropic": "a-key-cccc"}}), encoding="utf-8"
-    )
+    config.settings_path().write_text(json.dumps({"agents": {}, "api_keys": {"anthropic": "a-key-cccc"}}), encoding="utf-8")
     config.migrate_legacy_settings()
     assert memory_keyring.store == {("juli", "anthropic"): "a-key-cccc"}
     assert "api_keys" not in json.loads(config.settings_path().read_text(encoding="utf-8"))

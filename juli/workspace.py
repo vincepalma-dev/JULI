@@ -362,14 +362,10 @@ def commit(project_id: str, run_id: int, message: str) -> dict:
                     f"or run `git switch {branch}` yourself, then try again."
                 )
             if _check(_git(base, "status", "--porcelain"), "git status"):
-                raise GitError(
-                    f"The workspace has uncommitted later work{on}. Commit the latest run first, "
-                    f"then commit {branch}."
-                )
+                raise GitError(f"The workspace has uncommitted later work{on}. Commit the latest run first, then commit {branch}.")
             if _git(base, "diff", "--quiet", "HEAD", branch).returncode != 0:
                 raise GitError(
-                    f"Switching to {branch} would change the workspace, which holds later work{on}. "
-                    "Commit the latest run first."
+                    f"Switching to {branch} would change the workspace, which holds later work{on}. Commit the latest run first."
                 )
             _check(_git(base, "switch", "-q", branch), f"Switching to {branch}")
     else:

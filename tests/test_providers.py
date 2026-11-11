@@ -174,7 +174,11 @@ def test_missing_key_is_a_key_problem_without_a_request(net):
 
 def test_openai_stream_from_recorded_fixture(net):
     keystore.set_key("openai", "sk-test-aaaabbbb")
-    net.handler = lambda req: (200, fixture("openai_stream.sse"), {**SSE, "x-ratelimit-limit-requests": "100", "x-ratelimit-remaining-requests": "5"})
+    net.handler = lambda req: (
+        200,
+        fixture("openai_stream.sse"),
+        {**SSE, "x-ratelimit-limit-requests": "100", "x-ratelimit-remaining-requests": "5"},
+    )
 
     text, usage = collect("openai:gpt-6.1-sol", max_tokens=256)
 
@@ -290,7 +294,10 @@ def test_anthropic_role_limit_is_passed(net):
 
 def test_anthropic_low_credit(net):
     keystore.set_key("anthropic", "sk-ant-test-ccccdddd")
-    body = {"type": "error", "error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API."}}
+    body = {
+        "type": "error",
+        "error": {"type": "invalid_request_error", "message": "Your credit balance is too low to access the Anthropic API."},
+    }
     net.handler = lambda req: (400, body, {})
     with pytest.raises(ProviderError) as e:
         list(providers.stream("anthropic:claude-sonnet-5-5", MESSAGES))
@@ -340,7 +347,11 @@ def test_ollama_unreachable(net):
 
 def test_check_ok_lists_models(net):
     keystore.set_key("openai", "sk-test-aaaabbbb")
-    net.handler = lambda req: (200, {"object": "list", "data": [{"id": "gpt-6.1-sol", "object": "model", "created": 1, "owned_by": "openai"}]}, {})
+    net.handler = lambda req: (
+        200,
+        {"object": "list", "data": [{"id": "gpt-6.1-sol", "object": "model", "created": 1, "owned_by": "openai"}]},
+        {},
+    )
     assert providers.check("openai")["status"] == "ok"
     assert net.requests[0].url.path == "/v1/models"
 

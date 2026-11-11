@@ -60,10 +60,8 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="backend bind address (default 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8000, help="backend port (default 8000)")
     parser.add_argument("--no-browser", action="store_true", help="don't open the dashboard")
-    parser.add_argument("--show-link", action="store_true",
-                        help="print the dashboard link, which contains the session token")
-    parser.add_argument("--reload", action="store_true",
-                        help="restart the backend when its code changes (development only)")
+    parser.add_argument("--show-link", action="store_true", help="print the dashboard link, which contains the session token")
+    parser.add_argument("--reload", action="store_true", help="restart the backend when its code changes (development only)")
     args = parser.parse_args()
 
     print()
@@ -86,21 +84,25 @@ def main():
 
     try:
         print(f"  Starting backend on http://{args.host}:{args.port}")
-        processes.append(subprocess.Popen(
-            [sys.executable, "-m", "uvicorn", "--factory", "juli.api.app:create_app",
-             "--host", args.host, "--port", str(args.port)] + (["--reload"] if args.reload else []),
-            cwd=str(ROOT_DIR),
-            env=env,
-        ))
+        processes.append(
+            subprocess.Popen(
+                [sys.executable, "-m", "uvicorn", "--factory", "juli.api.app:create_app", "--host", args.host, "--port", str(args.port)]
+                + (["--reload"] if args.reload else []),
+                cwd=str(ROOT_DIR),
+                env=env,
+            )
+        )
         time.sleep(2)
 
         print("  Starting dashboard on http://localhost:3000")
-        processes.append(subprocess.Popen(
-            ["npm", "run", "dev"],
-            cwd=str(FRONTEND_DIR),
-            env={**os.environ, "JULI_API_PORT": str(args.port)},
-            shell=True,
-        ))
+        processes.append(
+            subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=str(FRONTEND_DIR),
+                env={**os.environ, "JULI_API_PORT": str(args.port)},
+                shell=True,
+            )
+        )
 
         print()
         # The link holds the session token, so it's only printed on request.

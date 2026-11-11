@@ -144,7 +144,9 @@ def run_command(
     else:
         # The user approved this exact text as a shell command.
         argv = command if os.name == "nt" else ["/bin/sh", "-c", command]
-    status, code, output = execute(argv, cwd=base, env=safe_env(), timeout=int(cfg["timeout"]), cancel=cancel, on_output=on_output, kill=kill)
+    status, code, output = execute(
+        argv, cwd=base, env=safe_env(), timeout=int(cfg["timeout"]), cancel=cancel, on_output=on_output, kill=kill
+    )
     if status == "failed" and code in NOT_RUN:
         status = "error"
     return CommandResult(command, status, code, output, sandboxed, round(time.monotonic() - start, 2))

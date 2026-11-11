@@ -12,15 +12,10 @@ import subprocess
 import sys
 
 WINDOWS_TTS_SCRIPT = (
-    "Add-Type -AssemblyName System.Speech; "
-    "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-    "$s.Speak($env:JULI_TTS_TEXT)"
+    "Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.Speak($env:JULI_TTS_TEXT)"
 )
 
-STT_NOTICE = (
-    "Privacy notice: voice input uses Google's online speech recognition. "
-    "Your recorded audio is sent to Google to be transcribed."
-)
+STT_NOTICE = "Privacy notice: voice input uses Google's online speech recognition. Your recorded audio is sent to Google to be transcribed."
 
 MAX_SPOKEN_CHARS = 500
 
